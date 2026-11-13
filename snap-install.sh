@@ -1,15 +1,15 @@
 #!/bin/sh
 # Slyy Shot installer (macOS 13+, Apple Silicon + Intel):
 #
-#   curl -fsSL https://raw.githubusercontent.com/simplify-erp/slyy-releases/main/snap-install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/mySlyy/shot/main/snap-install.sh | sh
 #
 # Installs the newest Slyy Shot release (tags slyy-snap-v*) from
-# github.com/simplify-erp/slyy-releases, verified against the release's
-# SHA256SUMS, to /Applications (if writable) or ~/Applications, then starts it.
+# github.com/mySlyy/shot, verified against the release's SHA256SUMS and the
+# pinned signer (SIGNER_REQ), to /Applications (if writable) or ~/Applications, then starts it.
 # Run it again to update (the app also updates itself from its menu).
 #
 # Uninstall (app + settings; your screenshots are kept):
-#   curl -fsSL https://raw.githubusercontent.com/simplify-erp/slyy-releases/main/snap-install.sh | sh -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/mySlyy/shot/main/snap-install.sh | sh -s -- --uninstall
 #
 # Environment (optional):
 #   SNAP_VERSION       install this version (e.g. 1.0.0) instead of the newest
@@ -17,10 +17,13 @@
 #   SNAP_RELEASES_API  release feed API base (mirrors, tests; https or loopback)
 set -eu
 
-API="${SNAP_RELEASES_API:-https://api.github.com/repos/simplify-erp/slyy-releases}"
+API="${SNAP_RELEASES_API:-https://api.github.com/repos/mySlyy/shot}"
 TAG_PREFIX="slyy-snap-v"
 APP="Slyy Shot.app"
 BUNDLE_ID="ai.slyy.snap"
+# Pinned signer: must equal snap/Resources/update_signer.req (checked by the release workflow).
+# SHA256SUMS comes from the same release, so only this proves who built the app.
+SIGNER_REQ='identifier "ai.slyy.snap" and certificate root = H"e794d64fa8c843fbd7c75c2fca5a23afda3ba74c"'
 
 say() { printf 'snap-install: %s\n' "$*"; }
 die() { printf 'snap-install: error: %s\n' "$*" >&2; exit 1; }
@@ -97,7 +100,8 @@ main() {
 	[ -d "$tmp/x/Slyy Snap.app" ] || die "archive holds no app"
 	reported=$(defaults read "$tmp/x/Slyy Snap.app/Contents/Info" CFBundleShortVersionString 2>/dev/null) || true
 	[ "$reported" = "$ver" ] || die "downloaded app reports '$reported', expected $ver"
-	codesign --verify --deep --strict "$tmp/x/Slyy Snap.app" || die "code signature invalid: not installed"
+	codesign --verify --deep --strict -R="$SIGNER_REQ" "$tmp/x/Slyy Snap.app" ||
+		die "code signature invalid or not the pinned Slyy Shot signer: not installed"
 
 	if [ -n "${SNAP_INSTALL_DIR:-}" ]; then
 		dir="$SNAP_INSTALL_DIR"

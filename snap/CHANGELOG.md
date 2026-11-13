@@ -1,5 +1,11 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 1.4.1
+
+- Updates: accepted only when signed by the pinned Slyy Shot signer, also on
+  ad-hoc builds (before, they skipped the signature check). Same pin in snap-install.sh.
+- Release feed and installer moved to github.com/mySlyy/shot.
+
 ## 1.4.0
 
 - Shortcuts: ⌘⇧5 area, ⌘⇧4 window, ⌘⇧3 screen (⌃⇧E edit last). Shows once
