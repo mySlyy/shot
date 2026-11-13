@@ -1,0 +1,149 @@
+name: Slyy Shot release
+
+# Builds snap/ on macOS, publishes slyy-snap-v<version> (SlyyShot-<version>.dmg + .zip + SHA256SUMS; never
+# "Latest", that stays with Slyy Desktop) and refreshes the slyy-shot-latest download link.
+# Release: bump snap/CHANGELOG.md, then push tag slyy-snap-v<version> or run this workflow with the version.
+# Secrets (without them: ad-hoc signed):
+#   SNAP_SIGN_P12 / _PASSWORD  base64 .p12 + password: self-signed "Slyy Snap Code Signing" (stable signature)
+#                              or a Developer ID Application certificate (also notarizable)
+#   SNAP_SIGN_IDENTITY         certificate name (the fingerprint is looked up from the .p12)
+#   NOTARY_KEY_P8 / NOTARY_KEY_ID / NOTARY_ISSUER_ID  App Store Connect API key (.p8 plain or base64)
+# Switching certificates: set allowedDeveloperTeam in Updater.swift and release that with the old
+# certificate first, or installed copies refuse the update.
+
+on:
+  push:
+    tags: ['slyy-snap-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, e.g. 1.0.1'
+        required: true
+      dry_run:
+        description: 'Build only, do not publish (artifacts kept on the run)'
+        type: boolean
+        default: false
+      test_signing:
+        description: 'Dry runs only: sign with a throwaway self-signed certificate'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write # starts the "Slyy Shot latest link" workflow
+
+concurrency: slyy-snap-release
+
+jobs:
+  release:
+    runs-on: macos-15-intel # arm64 runners often lack capacity; builds are universal either way
+    env:
+      INPUT_VERSION: ${{ inputs.version }}
+      SNAP_SIGN_P12: ${{ secrets.SNAP_SIGN_P12 }}
+      SNAP_SIGN_P12_PASSWORD: ${{ secrets.SNAP_SIGN_P12_PASSWORD }}
+      SNAP_SIGN_IDENTITY: ${{ secrets.SNAP_SIGN_IDENTITY }}
+      NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+      NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then v="${INPUT_VERSION#v}"; else v="${GITHUB_REF_NAME#slyy-snap-v}"; fi
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "invalid version '$v'"; exit 1; }
+          echo "VERSION=$v" >>"$GITHUB_ENV"
+
+      - name: Throwaway signing certificate (test)
+        if: inputs.dry_run && inputs.test_signing
+        run: |
+          cd "$RUNNER_TEMP"
+          printf '[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=Slyy Shot Test Signing\n[ext]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n' >t.cnf
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout t.key -out t.pem -days 2 -config t.cnf
+          openssl pkcs12 -export -legacy -inkey t.key -in t.pem -name "Slyy Shot Test Signing" -passout pass:test -out t.p12 ||
+            openssl pkcs12 -export -inkey t.key -in t.pem -name "Slyy Shot Test Signing" -passout pass:test -out t.p12
+          {
+            echo "TEST_SIGN_P12=$(base64 -i t.p12 | tr -d '\n')"
+            echo "TEST_SIGN_P12_PASSWORD=test"
+            echo "TEST_SIGN_IDENTITY=Slyy Shot Test Signing"
+          } >>"$GITHUB_ENV"
+
+      - name: Signing certificate (optional)
+        if: env.SNAP_SIGN_P12 != '' || env.TEST_SIGN_P12 != ''
+        run: |
+          if [ -z "$SNAP_SIGN_P12" ]; then
+            SNAP_SIGN_P12="$TEST_SIGN_P12"; SNAP_SIGN_P12_PASSWORD="$TEST_SIGN_P12_PASSWORD"; SNAP_SIGN_IDENTITY="$TEST_SIGN_IDENTITY"
+          fi
+          [ -n "$SNAP_SIGN_IDENTITY" ] || { echo "SNAP_SIGN_IDENTITY secret missing"; exit 1; }
+          kc="$RUNNER_TEMP/snap.keychain-db"; pw="$(uuidgen)"
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+          echo "$SNAP_SIGN_P12" | base64 --decode >"$RUNNER_TEMP/snap.p12"
+          security import "$RUNNER_TEMP/snap.p12" -k "$kc" -P "$SNAP_SIGN_P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/snap.p12"
+          # Developer ID intermediate CAs (in case the .p12 holds only the leaf)
+          for ca in DeveloperIDG2CA.cer DeveloperIDCA.cer; do
+            curl -fsSL -o "$RUNNER_TEMP/$ca" "https://www.apple.com/certificateauthority/$ca" &&
+              security import "$RUNNER_TEMP/$ca" -k "$kc" || true
+          done
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$pw" "$kc"
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security find-identity -p codesigning "$kc"
+          # Sign by SHA-1 fingerprint (immune to typos/quotes in the identity
+          # secret): the identity whose name contains SNAP_SIGN_IDENTITY, else
+          # the only/first one in the imported keychain.
+          want=$(printf '%s' "$SNAP_SIGN_IDENTITY" | tr -d '"\r\n' | sed 's/^ *//; s/ *$//')
+          ids=$(security find-identity -p codesigning "$kc" | grep -E '^ *[0-9]+\) [0-9A-F]{40} ' || true)
+          line=$(printf '%s\n' "$ids" | grep -F "\"$want" | head -n 1)
+          [ -n "$line" ] || line=$(printf '%s\n' "$ids" | head -n 1)
+          [ -n "$line" ] || { echo "no code signing identity in the imported .p12"; exit 1; }
+          hash=$(printf '%s\n' "$line" | awk '{print $2}')
+          name=$(printf '%s\n' "$line" | sed 's/^[^"]*"//; s/".*//')
+          echo "signing with: $name ($hash)"
+          echo "SIGN_IDENTITY=$hash" >>"$GITHUB_ENV"
+          echo "SIGN_NAME=$name" >>"$GITHUB_ENV"
+
+      - name: Notary key (optional)
+        if: env.NOTARY_KEY_P8 != ''
+        run: |
+          key="$RUNNER_TEMP/notary.p8"
+          case "$NOTARY_KEY_P8" in
+          *"BEGIN PRIVATE KEY"*) printf '%s\n' "$NOTARY_KEY_P8" >"$key" ;;
+          *) echo "$NOTARY_KEY_P8" | base64 --decode >"$key" ;;
+          esac
+          echo "NOTARY_KEY=$key" >>"$GITHUB_ENV"
+
+      - name: Build
+        run: snap/scripts/build.sh "$VERSION"
+
+      - name: Build artifacts (dry run)
+        if: inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: slyy-snap-${{ env.VERSION }}
+          path: snap/dist/
+
+      - name: Publish
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="slyy-snap-v$VERSION"
+          awk -v v="## $VERSION" '$0 == v { on = 1; next } /^## / { on = 0 } on' snap/CHANGELOG.md >"$RUNNER_TEMP/notes.md"
+          {
+            echo
+            echo "Install (macOS 13+): download **SlyyShot-$VERSION.dmg**, open it, drag Slyy Shot to Applications."
+            [ -n "$NOTARY_KEY_P8" ] || echo 'First launch: System Settings > Privacy & Security > "Open Anyway" (not notarized).'
+            echo
+            echo 'Or from Terminal (no Gatekeeper prompt):'
+            echo
+            echo '    curl -fsSL https://raw.githubusercontent.com/simplify-erp/slyy-releases/main/snap-install.sh | sh'
+          } >>"$RUNNER_TEMP/notes.md"
+          gh release create "$tag" \
+            "snap/dist/SlyyShot-$VERSION.dmg" "snap/dist/SlyySnap-$VERSION.zip" snap/dist/SHA256SUMS \
+            --title "Slyy Shot $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --target "$GITHUB_SHA" \
+            --latest=false
+          gh workflow run slyy-shot-latest.yml -f version="$VERSION"
