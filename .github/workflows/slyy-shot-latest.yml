@@ -1,7 +1,7 @@
 name: Slyy Shot latest link
 # Copies a Slyy Shot release's DMG to the rolling release "slyy-shot-latest" as SlyyShot.dmg, so
 # https://github.com/mySlyy/shot/releases/download/slyy-shot-latest/SlyyShot.dmg is always the newest.
-# The repository's "Latest" badge stays with Slyy Desktop. Started by the release workflow (or by hand).
+# Releases never take the "Latest" badge. Started by the release workflow (or by hand).
 on:
   workflow_dispatch:
     inputs:

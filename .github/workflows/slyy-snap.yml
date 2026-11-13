@@ -1,7 +1,7 @@
 name: Slyy Shot release
 
 # Builds snap/ on macOS, publishes slyy-snap-v<version> (SlyyShot-<version>.dmg + .zip + SHA256SUMS; never
-# "Latest", that stays with Slyy Desktop) and refreshes the slyy-shot-latest download link.
+# "Latest"; the rolling slyy-shot-latest release is the stable link) and refreshes the slyy-shot-latest download link.
 # Release: bump snap/CHANGELOG.md, then push tag slyy-snap-v<version> or run this workflow with the version.
 # Secrets (required to publish: releases must satisfy the pinned signer snap/Resources/update_signer.req;
 # dry runs without them: ad-hoc):

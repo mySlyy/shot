@@ -1,58 +1,31 @@
-# Slyy Desktop -- Releases
+# Slyy Shot
 
-Downloads for Slyy Desktop (formerly NOCA), the natural-language interface
-to Odoo ERP. This repository holds only release artefacts; the source is
-private. https://slyy.ai
-
-- Latest version: https://github.com/simplify-erp/slyy-releases/releases/latest
-- Requires macOS 14 or newer (Apple Silicon).
-- The app checks this repository for updates and installs them on one click.
-  Every DMG is signed; the app verifies the signature before installing.
-- Installations of NOCA 4.10.7 or newer move here by themselves with the
-  next update; older ones update to 4.10.7 first from
-  https://github.com/simplify-erp/noca-releases.
-
-## slyy CLI (terminal agent, Linux + macOS)
-
-One command installs the newest `slyy` CLI (arm64 + amd64; checksum verified, no sudo,
-to `~/.local/bin`):
-
-    curl -fsSL https://raw.githubusercontent.com/simplify-erp/slyy-releases/main/install.sh | sh
-
-Then open a new terminal and run `slyy`. Updates: `slyy update`. Remove: `slyy uninstall`, or
-
-    curl -fsSL https://raw.githubusercontent.com/simplify-erp/slyy-releases/main/install.sh | sh -s -- --uninstall
-
-(your data in ~/.slyy and ~/.work is kept). CLI releases are the `slyy-cli-v*` tags
-(the "Latest" badge stays with Slyy Desktop).
-
-## Installation
-
-1. Download the DMG from the latest release and drag "Slyy Desktop.app" to
-   Applications.
-2. First launch: macOS reports the developer cannot be verified (the build is
-   not yet notarized). Allow it once under System Settings > Privacy &
-   Security ("Open Anyway"), then launch Slyy Desktop again.
-3. Enter your Odoo instance (https URL, database, user, API key) in the
-   setup overlay.
-
-Deutsch: siehe LIESMICH.txt im DMG.
-
-## Slyy Shot (personal screenshot tool, macOS 13+)
+Personal screenshot tool, macOS 13+ (Apple Silicon + Intel). https://slyy.ai
 
 Menu bar app: ⌘⇧5 area, ⌘⇧4 window, ⌘⇧3 screen (switch off the
 macOS "Screenshots" keyboard shortcuts). Saves PNGs to
-~/Pictures/Slyy Shot and copies them to the clipboard. Install: download
+~/Pictures/Slyy Shot and copies them to the clipboard.
+
+## Installation
+
+Download
 https://github.com/mySlyy/shot/releases/download/slyy-shot-latest/SlyyShot.dmg
 (always the newest), open it, drag Slyy Shot to Applications (first launch: Privacy & Security > "Open Anyway").
 Or from Terminal (no Gatekeeper prompt):
 
     curl -fsSL https://raw.githubusercontent.com/mySlyy/shot/main/snap-install.sh | sh
 
+Remove: same command with `sh -s -- --uninstall`.
+
+## Updates
+
 The app checks for updates itself (menu > Check for Updates…; checksum and
-signature verified). Remove: same command with `sh -s -- --uninstall`.
-Updates and the installer accept only builds by the pinned signer
+signature verified). Updates and the installer accept only builds by the pinned signer
 `snap/Resources/update_signer.req` (copy in `snap-install.sh` SIGNER_REQ; the release
 workflow checks both match and refuses ad-hoc releases).
-Releases are the `slyy-snap-v*` tags (never "Latest"); source in `snap/`,
-built and published by `.github/workflows/slyy-snap.yml`.
+
+## Releases
+
+Releases are the `slyy-snap-v*` tags (never "Latest"; the rolling `slyy-shot-latest`
+release holds the newest DMG); source in `snap/`, built and published by
+`.github/workflows/slyy-snap.yml`.
