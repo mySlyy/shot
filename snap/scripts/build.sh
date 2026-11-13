@@ -5,12 +5,21 @@
 #   snap/dist/SHA256SUMS
 # Usage: snap/scripts/build.sh 1.0.0      (macOS + Xcode command line tools)
 # Signing: $SIGN_IDENTITY (a codesigning identity in the keychain) or ad-hoc ("-").
+# RELEASE=1 (CI publish): refuse ad-hoc, and the app must satisfy the pinned signer
+# Resources/update_signer.req (the same pin the self-updater and snap-install.sh enforce).
 set -eu
 ver="${1:?usage: build.sh <version>}"
 case "$ver" in
 *[!0-9.]* | "" | .* | *. | *..*) echo "invalid version '$ver'" >&2; exit 1 ;;
 esac
 cd "$(dirname "$0")/.."
+
+identity="${SIGN_IDENTITY:--}"
+# Fail early: a published ad-hoc build could never be verified by the updater/installer.
+if [ "${RELEASE:-}" = 1 ] && [ "$identity" = - ]; then
+	echo "RELEASE=1 needs SIGN_IDENTITY (pinned signer); refusing an ad-hoc release" >&2
+	exit 1
+fi
 
 swift build -c release --arch arm64 --arch x86_64
 bin="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/SlyySnap"
@@ -32,9 +41,9 @@ done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
 rm -rf "$iconset"
 plutil -lint "$app/Contents/Info.plist"
+# Pinned update signer, read by the self-updater (sealed by the signature below).
+cp Resources/update_signer.req "$app/Contents/Resources/update_signer.req"
 
-
-identity="${SIGN_IDENTITY:--}"
 # SIGN_IDENTITY may be a SHA-1 fingerprint; SIGN_NAME then carries the name.
 case "${SIGN_NAME:-$identity}" in
 "Developer ID"*) ts=--timestamp ;; # secure timestamp (required for notarization)
@@ -42,6 +51,10 @@ case "${SIGN_NAME:-$identity}" in
 esac
 codesign --force --options runtime "$ts" --sign "$identity" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
+if [ "${RELEASE:-}" = 1 ]; then
+	codesign --verify --deep --strict -R Resources/update_signer.req "$app" ||
+		{ echo "signed app does not satisfy Resources/update_signer.req; installed copies would refuse it" >&2; exit 1; }
+fi
 
 # Notarization (needs a Developer ID signature and an App Store Connect API
 # key: NOTARY_KEY = path to the .p8, NOTARY_KEY_ID, NOTARY_ISSUER).

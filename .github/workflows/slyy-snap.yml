@@ -3,13 +3,15 @@ name: Slyy Shot release
 # Builds snap/ on macOS, publishes slyy-snap-v<version> (SlyyShot-<version>.dmg + .zip + SHA256SUMS; never
 # "Latest", that stays with Slyy Desktop) and refreshes the slyy-shot-latest download link.
 # Release: bump snap/CHANGELOG.md, then push tag slyy-snap-v<version> or run this workflow with the version.
-# Secrets (without them: ad-hoc signed):
+# Secrets (required to publish: releases must satisfy the pinned signer snap/Resources/update_signer.req;
+# dry runs without them: ad-hoc):
 #   SNAP_SIGN_P12 / _PASSWORD  base64 .p12 + password: self-signed "Slyy Snap Code Signing" (stable signature)
 #                              or a Developer ID Application certificate (also notarizable)
 #   SNAP_SIGN_IDENTITY         certificate name (the fingerprint is looked up from the .p12)
 #   NOTARY_KEY_P8 / NOTARY_KEY_ID / NOTARY_ISSUER_ID  App Store Connect API key (.p8 plain or base64)
-# Switching certificates: set allowedDeveloperTeam in Updater.swift and release that with the old
-# certificate first, or installed copies refuse the update.
+# Switching certificates: add the new signer to snap/Resources/update_signer.req (and SIGNER_REQ in
+# snap-install.sh) as an "or" alternative, release that with the old certificate first, or installed
+# copies refuse the update.
 
 on:
   push:
@@ -114,7 +116,15 @@ jobs:
           esac
           echo "NOTARY_KEY=$key" >>"$GITHUB_ENV"
 
+      - name: Signer pin consistent
+        # snap-install.sh is standalone (curl | sh), so it carries its own copy of the pin.
+        run: |
+          want="SIGNER_REQ='$(cat snap/Resources/update_signer.req)'"
+          grep -qxF "$want" snap-install.sh || { echo "snap-install.sh SIGNER_REQ differs from snap/Resources/update_signer.req"; exit 1; }
+
       - name: Build
+        env:
+          RELEASE: ${{ inputs.dry_run && '0' || '1' }} # publishing: no ad-hoc, pinned signer enforced
         run: snap/scripts/build.sh "$VERSION"
 
       - name: Build artifacts (dry run)
@@ -138,7 +148,7 @@ jobs:
             echo
             echo 'Or from Terminal (no Gatekeeper prompt):'
             echo
-            echo '    curl -fsSL https://raw.githubusercontent.com/simplify-erp/slyy-releases/main/snap-install.sh | sh'
+            echo '    curl -fsSL https://raw.githubusercontent.com/mySlyy/shot/main/snap-install.sh | sh'
           } >>"$RUNNER_TEMP/notes.md"
           gh release create "$tag" \
             "snap/dist/SlyyShot-$VERSION.dmg" "snap/dist/SlyySnap-$VERSION.zip" snap/dist/SHA256SUMS \

@@ -2,13 +2,15 @@ import AppKit
 import CryptoKit
 import Security
 
-// Release feed: github.com/simplify-erp/slyy-releases, tags slyy-snap-vX.Y.Z,
+// Release feed: github.com/mySlyy/shot, tags slyy-snap-vX.Y.Z,
 // assets SlyySnap-X.Y.Z.zip + SHA256SUMS (see snap/scripts/build.sh).
-private let releasesAPI = URL(string: "https://api.github.com/repos/simplify-erp/slyy-releases/releases?per_page=100")!
+private let releasesAPI = URL(string: "https://api.github.com/repos/mySlyy/shot/releases?per_page=100")!
 private let tagPrefix = "slyy-snap-v"
-/// Developer ID team also accepted for updates (set before moving releases from the self-signed certificate to it).
-private let allowedDeveloperTeam = ""
-let installCommand = "curl -fsSL https://raw.githubusercontent.com/simplify-erp/slyy-releases/main/snap-install.sh | sh"
+/// Pinned signer (code requirement text) every update must satisfy. Single source:
+/// snap/Resources/update_signer.req, copied into the bundle by build.sh (sealed by our signature).
+/// Switching certificates: add the new signer there as an "or" alternative, release with the old one first.
+private let signerResource = "update_signer"
+let installCommand = "curl -fsSL https://raw.githubusercontent.com/mySlyy/shot/main/snap-install.sh | sh"
 
 struct Version: Comparable, CustomStringConvertible {
     let parts: [Int]
@@ -160,28 +162,24 @@ final class Updater {
             throw UpdateError("The download is not Slyy Shot \(version); nothing installed.")
         }
         try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path])
-        // Stable signature (self-signed or Developer ID): only accept updates satisfying our designated requirement.
-        if let requirement = updateRequirement() {
-            try verifySignature(of: app, requirement: requirement)
-        }
+        // Fail closed: the download must satisfy the pinned signer, whatever this copy is signed with
+        // (ad-hoc dev builds included). SHA256SUMS sits in the same release, so it proves integrity only.
+        try verifySignature(of: app, requirement: try updateRequirement())
         return app
     }
 
-    /// Our designated requirement (+ allowed Developer ID team); nil when ad-hoc signed (a per-build hash).
-    nonisolated static func updateRequirement() -> String? {
-        var code: SecCode?
-        guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return nil }
-        var staticCode: SecStaticCode?
-        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
-        var requirement: SecRequirement?
-        guard SecCodeCopyDesignatedRequirement(staticCode, [], &requirement) == errSecSuccess,
-              let requirement else { return nil }
-        var text: CFString?
-        guard SecRequirementCopyString(requirement, [], &text) == errSecSuccess, let text else { return nil }
-        let own = text as String
-        if own.hasPrefix("cdhash") { return nil }
-        if allowedDeveloperTeam.isEmpty { return own }
-        return "(\(own)) or (identifier \"ai.slyy.snap\" and anchor apple generic and certificate leaf[subject.OU] = \"\(allowedDeveloperTeam)\")"
+    /// Pinned signer requirement from the bundle; throws (no update) when missing or empty.
+    nonisolated static func updateRequirement() throws -> String {
+        guard let url = Bundle.main.url(forResource: signerResource, withExtension: "req"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            throw UpdateError("This build has no pinned update signer; nothing installed. Update from Terminal:\n\n\(installCommand)")
+        }
+        let requirement = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A cdhash pin would only match one exact build; never a valid update signer.
+        guard !requirement.isEmpty, !requirement.hasPrefix("cdhash") else {
+            throw UpdateError("Internal error: bad pinned update signer.")
+        }
+        return requirement
     }
 
     nonisolated static func verifySignature(of app: URL, requirement text: String) throws {
