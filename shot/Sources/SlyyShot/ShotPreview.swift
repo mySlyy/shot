@@ -4,13 +4,13 @@ import AppKit
 /// the mouse): Edit / Copy / Show in Finder / close. Disappears after a few
 /// seconds unless the mouse is over it. Clicking the image also opens the editor.
 @MainActor
-final class SnapPreview: NSObject {
-    private static var current: SnapPreview?
+final class ShotPreview: NSObject {
+    private static var current: ShotPreview?
 
     static func show(_ url: URL) {
         current?.close()
         guard let image = NSImage(contentsOf: url) else { return }
-        let preview = SnapPreview(url: url, image: image)
+        let preview = ShotPreview(url: url, image: image)
         current = preview
         preview.present()
     }
@@ -115,7 +115,7 @@ final class SnapPreview: NSObject {
         timer?.invalidate()
         timer = nil
         panel.orderOut(nil)
-        if SnapPreview.current === self { SnapPreview.current = nil }
+        if ShotPreview.current === self { ShotPreview.current = nil }
     }
 
     @objc private func edit() {

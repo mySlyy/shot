@@ -6,8 +6,8 @@ enum CaptureMode {
 
 /// Screenshots via /usr/sbin/screencapture, saved as PNG to Settings.folder, optionally copied to the clipboard.
 @MainActor
-final class Snapper {
-    private(set) var lastSnap: URL?
+final class Shooter {
+    private(set) var lastShot: URL?
     private var busy = false
     private var askedForAccess = false
 
@@ -18,10 +18,10 @@ final class Snapper {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         } catch {
-            Alerts.info("Cannot create snap folder", "\(folder.path)\n\n\(error.localizedDescription)")
+            Alerts.info("Cannot create shot folder", "\(folder.path)\n\n\(error.localizedDescription)")
             return
         }
-        let (url, number) = Self.nextSnap(in: folder)
+        let (url, number) = Self.nextShot(in: folder)
         var args = ["-x", "-t", "png"] // -x: no system sound (we play our own)
         switch mode {
         case .area: args.append("-i") // drag a rectangle; Space toggles window mode, Esc cancels
@@ -37,17 +37,17 @@ final class Snapper {
                 self.busy = false
                 // No file: the user pressed Esc.
                 guard FileManager.default.fileExists(atPath: url.path) else { return }
-                Settings.lastSnapNumber = max(Settings.lastSnapNumber, number)
-                self.lastSnap = url
+                Settings.lastShotNumber = max(Settings.lastShotNumber, number)
+                self.lastShot = url
                 if Settings.copyToClipboard { Clipboard.copy(url) }
                 if Settings.playSound { NSSound(named: "Tink")?.play() }
-                if Settings.openEditor { Editor.open(url) } else { SnapPreview.show(url) }
+                if Settings.openEditor { Editor.open(url) } else { ShotPreview.show(url) }
             }
         }
     }
 
     func copyLast() {
-        if let lastSnap { Clipboard.copy(lastSnap) }
+        if let lastShot { Clipboard.copy(lastShot) }
     }
 
     /// Without Screen Recording, screencapture only gets the wallpaper, so we do not capture. A grant lost by an update
@@ -60,7 +60,7 @@ final class Snapper {
         if !askedForAccess {
             askedForAccess = true
             if Settings.hadScreenAccess {
-                try? Updater.run("/usr/bin/tccutil", ["reset", "ScreenCapture", "ai.slyy.snap"])
+                try? Updater.run("/usr/bin/tccutil", ["reset", "ScreenCapture", appBundleID])
                 Settings.hadScreenAccess = false
             }
             CGRequestScreenCaptureAccess() // system prompt (adds a fresh entry)
@@ -76,15 +76,15 @@ final class Snapper {
     }
 
     func fileRenamed(from old: URL, to new: URL) {
-        if lastSnap == old { lastSnap = new }
+        if lastShot == old { lastShot = new }
     }
 
     func editLast() {
-        if let lastSnap { Editor.open(lastSnap) }
+        if let lastShot { Editor.open(lastShot) }
     }
 
     func revealLast() {
-        if let lastSnap { NSWorkspace.shared.activateFileViewerSelecting([lastSnap]) }
+        if let lastShot { NSWorkspace.shared.activateFileViewerSelecting([lastShot]) }
     }
 
     func openFolder() {
@@ -95,7 +95,7 @@ final class Snapper {
 
     func chooseFolder() {
         let panel = NSOpenPanel()
-        panel.title = "Save snaps to"
+        panel.title = "Save shots to"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
@@ -108,7 +108,7 @@ final class Snapper {
     }
 
     /// Next free slyy-NNNNN.png above both the highest number used and the highest in the folder (never reused).
-    private static func nextSnap(in folder: URL) -> (URL, Int) {
+    private static func nextShot(in folder: URL) -> (URL, Int) {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         let highestInFolder = names.compactMap { name -> Int? in
             guard name.hasPrefix("slyy-"), name.lowercased().hasSuffix(".png") else { return nil }
@@ -116,7 +116,7 @@ final class Snapper {
             guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
             return Int(digits)
         }.max() ?? 0
-        var n = max(highestInFolder, Settings.lastSnapNumber) + 1
+        var n = max(highestInFolder, Settings.lastShotNumber) + 1
         var url = folder.appendingPathComponent(String(format: "slyy-%05d.png", n))
         while FileManager.default.fileExists(atPath: url.path) {
             n += 1
@@ -168,25 +168,21 @@ enum Alerts {
     }
 }
 
-/// Quit and reopen the app at `path` a second later (after this process is gone).
-@MainActor func relaunch(_ path: String) {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/bin/sh")
-    p.arguments = ["-c", "sleep 1; open \"$0\"", path]
-    try? p.run()
-    NSApp.terminate(nil)
-}
+/// Bundle ID rename (2.0.0, legacyBundleID -> appBundleID): copy the old preferences once (folder, numbering,
+/// options; never overwriting a value already set), then drop the old domain. Not carried: the Screen Recording
+/// grant (macOS ties it to the bundle ID) and per-version prompts. Removable once no 1.x installs are left.
+private let legacyBundleID = "ai.slyy.snap"
+private let legacyKeys = ["lastSnapNumber": "lastShotNumber"] // renamed keys: old -> new
+private let legacySkip: Set<String> = ["hadScreenAccess", "skippedVersion", "cleanupAskedVersion"]
 
-/// Rebrand (1.3.0): "Slyy Snap.app" -> "Slyy Shot.app" (updates arrive under the old name) and the
-/// default folder ~/Pictures/Slyy Snap -> Slyy Shot. Returns true when relaunching from the new name.
-@MainActor func migrateFromSlyySnap() -> Bool {
-    let fm = FileManager.default, app = Bundle.main.bundleURL, folder = Settings.folder
-    let oldFolder = folder.deletingLastPathComponent().appendingPathComponent("Slyy Snap")
-    if folder.lastPathComponent == "Slyy Shot", !fm.fileExists(atPath: folder.path) { try? fm.moveItem(at: oldFolder, to: folder) }
-    let renamed = app.deletingLastPathComponent().appendingPathComponent("Slyy Shot.app")
-    guard app.lastPathComponent == "Slyy Snap.app", (try? fm.moveItem(at: app, to: renamed)) != nil else { return false }
-    relaunch(renamed.path)
-    return true
+@MainActor func migrateSettingsFromLegacyBundleID() {
+    let d = UserDefaults.standard
+    guard let old = d.persistentDomain(forName: legacyBundleID) else { return }
+    for (key, value) in old where !legacySkip.contains(key) {
+        let newKey = legacyKeys[key] ?? key
+        if d.object(forKey: newKey) == nil { d.set(value, forKey: newKey) }
+    }
+    d.removePersistentDomain(forName: legacyBundleID)
 }
 
 /// Once per installed version: offer to trash leftover installers in ~/Downloads and eject a mounted installer DMG.
@@ -196,9 +192,9 @@ enum Alerts {
     Settings.cleanupAskedVersion = version
     let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
     let files = ((try? fm.contentsOfDirectory(at: downloads, includingPropertiesForKeys: nil)) ?? []).filter { url in
-        ["SlyyShot-", "SlyySnap-"].contains { url.lastPathComponent.hasPrefix($0) } && ["dmg", "zip"].contains(url.pathExtension)
+        url.lastPathComponent.hasPrefix("SlyyShot-") && ["dmg", "zip"].contains(url.pathExtension)
     }
-    let volumes = ((try? fm.contentsOfDirectory(atPath: "/Volumes")) ?? []).filter { $0.hasPrefix("Slyy Shot ") || $0.hasPrefix("Slyy Snap ") }
+    let volumes = ((try? fm.contentsOfDirectory(atPath: "/Volumes")) ?? []).filter { $0.hasPrefix("Slyy Shot ") }
     guard !files.isEmpty || !volumes.isEmpty else { return }
     let list = files.map { "• " + ($0.path as NSString).abbreviatingWithTildeInPath + " (to Trash)" } + volumes.map { "• /Volumes/\($0) (eject)" }
     guard Alerts.confirm("Clean up installation files?", "Slyy Shot \(version) is installed. These are no longer needed:\n\n"

@@ -15,7 +15,7 @@ final class HotKeys {
         installHandlerOnce()
         handlers[id] = handler
         var ref: EventHotKeyRef?
-        let hotKeyID = EventHotKeyID(signature: OSType(0x534E_4150), id: id) // 'SNAP'
+        let hotKeyID = EventHotKeyID(signature: OSType(0x5348_4F54), id: id) // 'SHOT'
         let status = RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), hotKeyID,
                                          GetApplicationEventTarget(), 0, &ref)
         if status == noErr, let ref {

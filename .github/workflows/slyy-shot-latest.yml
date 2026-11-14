@@ -14,7 +14,7 @@ jobs:
     steps:
       - run: |
           echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "invalid version '$V'"; exit 1; }
-          gh release download "slyy-snap-v$V" -p "SlyyShot-$V.dmg" -O SlyyShot.dmg
+          gh release download "slyy-shot-v$V" -p "SlyyShot-$V.dmg" -O SlyyShot.dmg
           gh release view slyy-shot-latest >/dev/null 2>&1 || gh release create slyy-shot-latest --latest=false --title "Slyy Shot – latest" --notes "-"
           gh release upload slyy-shot-latest SlyyShot.dmg --clobber
-          gh release edit slyy-shot-latest --latest=false --notes "Always the newest Slyy Shot (now $V): download **SlyyShot.dmg**, open it, drag Slyy Shot to Applications. Release notes: https://github.com/$GH_REPO/releases/tag/slyy-snap-v$V"
+          gh release edit slyy-shot-latest --latest=false --notes "Always the newest Slyy Shot (now $V): download **SlyyShot.dmg**, open it, drag Slyy Shot to Applications. Release notes: https://github.com/$GH_REPO/releases/tag/slyy-shot-v$V"

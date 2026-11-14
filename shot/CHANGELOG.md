@@ -1,9 +1,15 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
-## 1.4.1
+## 2.0.0
 
+- Rebrand complete: "Shot" everywhere. Bundle ID ai.slyy.shot (was ai.slyy.snap),
+  release tags slyy-shot-v*, update zip SlyyShot-X.Y.Z.zip, installer shot-install.sh.
+- No update path from 1.x: reinstall once with shot-install.sh (quits 1.x, drops its
+  Screen Recording entry). Settings are copied over on first launch; Screen
+  Recording must be allowed again.
+- Menu: "Last Shot", "Shots Folder" (was Snap).
 - Updates: accepted only when signed by the pinned Slyy Shot signer, also on
-  ad-hoc builds (before, they skipped the signature check). Same pin in snap-install.sh.
+  ad-hoc builds (before, they skipped the signature check). Same pin in shot-install.sh.
 - Release feed and installer moved to github.com/mySlyy/shot.
 
 ## 1.4.0

@@ -2,15 +2,15 @@ import AppKit
 import CryptoKit
 import Security
 
-// Release feed: github.com/mySlyy/shot, tags slyy-snap-vX.Y.Z,
-// assets SlyySnap-X.Y.Z.zip + SHA256SUMS (see snap/scripts/build.sh).
+// Release feed: github.com/mySlyy/shot, tags slyy-shot-vX.Y.Z,
+// assets SlyyShot-X.Y.Z.zip + SHA256SUMS (see shot/scripts/build.sh).
 private let releasesAPI = URL(string: "https://api.github.com/repos/mySlyy/shot/releases?per_page=100")!
-private let tagPrefix = "slyy-snap-v"
+private let tagPrefix = "slyy-shot-v"
 /// Pinned signer (code requirement text) every update must satisfy. Single source:
-/// snap/Resources/update_signer.req, copied into the bundle by build.sh (sealed by our signature).
+/// shot/Resources/update_signer.req, copied into the bundle by build.sh (sealed by our signature).
 /// Switching certificates: add the new signer there as an "or" alternative, release with the old one first.
 private let signerResource = "update_signer"
-let installCommand = "curl -fsSL https://raw.githubusercontent.com/mySlyy/shot/main/snap-install.sh | sh"
+let installCommand = "curl -fsSL https://raw.githubusercontent.com/mySlyy/shot/main/shot-install.sh | sh"
 
 struct Version: Comparable, CustomStringConvertible {
     let parts: [Int]
@@ -111,7 +111,7 @@ final class Updater {
     }
 
     private func install(_ release: GitHubRelease, _ version: Version) {
-        let zipName = "SlyySnap-\(version).zip"
+        let zipName = "SlyyShot-\(version).zip"
         guard let zipAsset = release.assets.first(where: { $0.name == zipName }),
               let sumsAsset = release.assets.first(where: { $0.name == "SHA256SUMS" }) else {
             Alerts.info("Update failed", "Release \(release.tag_name) has no \(zipName) or SHA256SUMS.")
@@ -149,15 +149,15 @@ final class Updater {
         guard got == want else { throw UpdateError("Checksum mismatch for \(zipName); nothing installed.") }
 
         let work = FileManager.default.temporaryDirectory
-            .appendingPathComponent("slyy-snap-update-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("slyy-shot-update-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         let zipFile = work.appendingPathComponent(zipName)
         try zipData.write(to: zipFile)
         let out = work.appendingPathComponent("x", isDirectory: true)
         try run("/usr/bin/ditto", ["-x", "-k", zipFile.path, out.path])
-        let app = out.appendingPathComponent("Slyy Snap.app", isDirectory: true) // zip keeps the pre-1.3 name
+        let app = out.appendingPathComponent("Slyy Shot.app", isDirectory: true)
         guard let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist")),
-              info["CFBundleIdentifier"] as? String == "ai.slyy.snap",
+              info["CFBundleIdentifier"] as? String == appBundleID,
               info["CFBundleShortVersionString"] as? String == version else {
             throw UpdateError("The download is not Slyy Shot \(version); nothing installed.")
         }
@@ -232,7 +232,7 @@ final class Updater {
         """
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", script, "slyy-snap-update",
+        p.arguments = ["-c", script, "slyy-shot-update",
                        String(ProcessInfo.processInfo.processIdentifier), app.path, next.path]
         do {
             try p.run()
