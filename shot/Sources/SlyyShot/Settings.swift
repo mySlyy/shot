@@ -1,10 +1,10 @@
 import Foundation
 
-/// User preferences (UserDefaults domain ai.slyy.snap).
+/// User preferences (UserDefaults domain ai.slyy.shot).
 enum Settings {
     private static var d: UserDefaults { .standard }
 
-    /// Where snaps are saved. Default: ~/Pictures/Slyy Shot
+    /// Where shots are saved. Default: ~/Pictures/Slyy Shot
     static var folder: URL {
         get {
             if let p = d.string(forKey: "folder"), !p.isEmpty {
@@ -24,8 +24,8 @@ enum Settings {
     @Pref("autoUpdate", true) static var autoUpdate: Bool
     /// Screen Recording was granted at some point (detects a grant lost by an update).
     @Pref("hadScreenAccess", false) static var hadScreenAccess: Bool
-    /// Highest snap number used (slyy-NNNNN.png).
-    @Pref("lastSnapNumber", 0) static var lastSnapNumber: Int
+    /// Highest shot number used (slyy-NNNNN.png).
+    @Pref("lastShotNumber", 0) static var lastShotNumber: Int
     @Pref("shortcutsHintShown", false) static var shortcutsHintShown: Bool
     @Pref("cleanupAskedVersion", "") static var cleanupAskedVersion: String
     @Pref("skippedVersion", nil) static var skippedVersion: String?

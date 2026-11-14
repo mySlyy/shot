@@ -5,18 +5,18 @@ import ServiceManagement
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
-    private let snapper = Snapper()
+    private let shooter = Shooter()
     private let updater = Updater()
     private var updateTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        migrateSettingsFromLegacyBundleID() // first: everything below reads Settings
         updater.cleanUp()
-        if migrateFromSlyySnap() { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { offerInstallerCleanup() }
         if CGPreflightScreenCaptureAccess() { Settings.hadScreenAccess = true }
         NSApp.mainMenu = Self.mainMenu()
-        let snapperForRename = snapper
-        Editor.onRename = { old, new in snapperForRename.fileRenamed(from: old, to: new) }
+        let shooterForRename = shooter
+        Editor.onRename = { old, new in shooterForRename.fileRenamed(from: old, to: new) }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
@@ -30,11 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // ⌘⇧5 area, ⌘⇧4 window, ⌘⇧3 screen (macOS' own screenshot shortcuts must be off), ⌃⇧E edit last.
         let mods = cmdKey | shiftKey
-        let snapper = self.snapper
-        HotKeys.shared.register(id: 1, keyCode: kVK_ANSI_5, modifiers: mods) { snapper.capture(.area) }
-        HotKeys.shared.register(id: 2, keyCode: kVK_ANSI_4, modifiers: mods) { snapper.capture(.window) }
-        HotKeys.shared.register(id: 3, keyCode: kVK_ANSI_3, modifiers: mods) { snapper.capture(.screen) }
-        HotKeys.shared.register(id: 4, keyCode: kVK_ANSI_E, modifiers: controlKey | shiftKey) { snapper.editLast() }
+        let shooter = self.shooter
+        HotKeys.shared.register(id: 1, keyCode: kVK_ANSI_5, modifiers: mods) { shooter.capture(.area) }
+        HotKeys.shared.register(id: 2, keyCode: kVK_ANSI_4, modifiers: mods) { shooter.capture(.window) }
+        HotKeys.shared.register(id: 3, keyCode: kVK_ANSI_3, modifiers: mods) { shooter.capture(.screen) }
+        HotKeys.shared.register(id: 4, keyCode: kVK_ANSI_E, modifiers: controlKey | shiftKey) { shooter.editLast() }
         offerToFreeSystemShortcuts()
 
         // Updates: 10 s after launch, then every 6 h (if enabled).
@@ -107,21 +107,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let cs: NSEvent.ModifierFlags = [.control, .shift]
-        let snapper = self.snapper
+        let shooter = self.shooter
         let updater = self.updater
 
-        menu.addItem(ActionItem("Capture Area", key: "5", mods: [.command, .shift]) { snapper.capture(.area) })
-        menu.addItem(ActionItem("Capture Window", key: "4", mods: [.command, .shift]) { snapper.capture(.window) })
-        menu.addItem(ActionItem("Capture Screen", key: "3", mods: [.command, .shift]) { snapper.capture(.screen) })
+        menu.addItem(ActionItem("Capture Area", key: "5", mods: [.command, .shift]) { shooter.capture(.area) })
+        menu.addItem(ActionItem("Capture Window", key: "4", mods: [.command, .shift]) { shooter.capture(.window) })
+        menu.addItem(ActionItem("Capture Screen", key: "3", mods: [.command, .shift]) { shooter.capture(.screen) })
         menu.addItem(.separator())
 
-        let hasLast = snapper.lastSnap != nil
-        menu.addItem(ActionItem("Edit Last Snap", key: "e", mods: cs, enabled: hasLast) { snapper.editLast() })
+        let hasLast = shooter.lastShot != nil
+        menu.addItem(ActionItem("Edit Last Shot", key: "e", mods: cs, enabled: hasLast) { shooter.editLast() })
         menu.addItem(ActionItem("Open Image in Editor…") { Editor.chooseAndOpen() })
-        menu.addItem(ActionItem("Copy Last Snap", enabled: hasLast) { snapper.copyLast() })
-        menu.addItem(ActionItem("Show Last Snap in Finder", enabled: hasLast) { snapper.revealLast() })
-        menu.addItem(ActionItem("Open Snaps Folder") { snapper.openFolder() })
-        menu.addItem(ActionItem("Change Snaps Folder…") { snapper.chooseFolder() })
+        menu.addItem(ActionItem("Copy Last Shot", enabled: hasLast) { shooter.copyLast() })
+        menu.addItem(ActionItem("Show Last Shot in Finder", enabled: hasLast) { shooter.revealLast() })
+        menu.addItem(ActionItem("Open Shots Folder") { shooter.openFolder() })
+        menu.addItem(ActionItem("Change Shots Folder…") { shooter.chooseFolder() })
         menu.addItem(.separator())
 
         let options = NSMenu()

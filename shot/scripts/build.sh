@@ -1,12 +1,12 @@
 #!/bin/sh
 # Build "Slyy Shot.app" (universal arm64 + x86_64) and the release assets:
-#   snap/dist/SlyyShot-<version>.dmg  (double-click install: drag to Applications)
-#   snap/dist/SlyySnap-<version>.zip  (used by the self-updater and snap-install.sh)
-#   snap/dist/SHA256SUMS
-# Usage: snap/scripts/build.sh 1.0.0      (macOS + Xcode command line tools)
+#   shot/dist/SlyyShot-<version>.dmg  (double-click install: drag to Applications)
+#   shot/dist/SlyyShot-<version>.zip  (used by the self-updater and shot-install.sh)
+#   shot/dist/SHA256SUMS
+# Usage: shot/scripts/build.sh 1.0.0      (macOS + Xcode command line tools)
 # Signing: $SIGN_IDENTITY (a codesigning identity in the keychain) or ad-hoc ("-").
 # RELEASE=1 (CI publish): refuse ad-hoc, and the app must satisfy the pinned signer
-# Resources/update_signer.req (the same pin the self-updater and snap-install.sh enforce).
+# Resources/update_signer.req (the same pin the self-updater and shot-install.sh enforce).
 set -eu
 ver="${1:?usage: build.sh <version>}"
 case "$ver" in
@@ -22,12 +22,12 @@ if [ "${RELEASE:-}" = 1 ] && [ "$identity" = - ]; then
 fi
 
 swift build -c release --arch arm64 --arch x86_64
-bin="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/SlyySnap"
+bin="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/SlyyShot"
 
 rm -rf dist
 app="dist/Slyy Shot.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$bin" "$app/Contents/MacOS/SlyySnap"
+cp "$bin" "$app/Contents/MacOS/SlyyShot"
 sed "s/__VERSION__/$ver/g" Resources/Info.plist >"$app/Contents/Info.plist"
 
 # App icon (Slyy logo, 1024 px PNG) -> AppIcon.icns
@@ -83,10 +83,9 @@ if [ "$notarize" = yes ]; then
 	xcrun stapler validate "$app"
 fi
 
-zip="SlyySnap-$ver.zip"
+zip="SlyyShot-$ver.zip"
 dmg="SlyyShot-$ver.dmg"
-# The zip keeps the pre-1.3 bundle name "Slyy Snap.app" (1.2.x updaters look for it); the app renames itself.
-(cd dist && ditto "Slyy Shot.app" "z/Slyy Snap.app" && ditto -c -k --keepParent "z/Slyy Snap.app" "$zip" && rm -rf z)
+(cd dist && ditto -c -k --keepParent "Slyy Shot.app" "$zip")
 
 if [ "$notarize" = yes ]; then
 	open_step="2. Open it from Applications."
