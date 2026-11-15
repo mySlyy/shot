@@ -1,5 +1,11 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.0.3
+
+- Editor: the shot is 100% opaque again (2.0.2 made it see-through by mistake).
+- Editor: the background around the shot is 30% transparent instead: plain grey
+  at 70%, the desktop shows through sharp (no blur). Toolbar stays solid.
+
 ## 2.0.2
 
 - Editor: the shot is 30% see-through on screen (floats on the translucent
