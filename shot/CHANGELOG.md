@@ -8,6 +8,8 @@
   Screen Recording entry). Settings are copied over on first launch; Screen
   Recording must be allowed again.
 - Menu: "Last Shot", "Shots Folder" (was Snap).
+- Editor: Copy (⌘C) copies only the selected crop area, also before Return
+  applies it (before: the full image).
 - Updates: accepted only when signed by the pinned Slyy Shot signer, also on
   ad-hoc builds (before, they skipped the signature check). Same pin in shot-install.sh.
 - Release feed and installer moved to github.com/mySlyy/shot.
