@@ -102,7 +102,7 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     let image: NSImage
     private let pixelated: NSImage?
     private(set) var marks: [Mark] = []
-    private(set) var crop: CGRect?
+    private(set) var crop: CGRect? { didSet { updateShadow() } }
     private(set) var changeCount = 0
     private var undoStack: [([Mark], CGRect?)] = []
     private var draft: Mark?
@@ -125,10 +125,25 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
         self.image = image
         self.pixelated = Self.pixelate(image)
         super.init(frame: NSRect(origin: .zero, size: image.size))
+        // Floating look: the image hovers over the translucent editor background with a soft shadow.
+        // NSView.shadow, not layer.shadow*: AppKit resets the layer's shadow from it when the view joins a window.
+        wantsLayer = true
+        let floating = NSShadow()
+        floating.shadowColor = NSColor.black.withAlphaComponent(0.45)
+        floating.shadowBlurRadius = 16
+        floating.shadowOffset = NSSize(width: 0, height: -6)
+        shadow = floating
+        updateShadow()
     }
 
     required init?(coder: NSCoder) {
         fatalError("not used")
+    }
+
+    /// Shadow under the visible image only (the crop area once applied). An explicit path keeps it cheap:
+    /// no shadow re-rendering from the layer's alpha on every redraw while drawing marks.
+    private func updateShadow() {
+        layer?.shadowPath = CGPath(rect: crop ?? bounds, transform: nil)
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -148,7 +163,17 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             let shade = NSBezierPath(rect: bounds)
             shade.appendRect(c)
             shade.windingRule = .evenOdd
-            (draftCrop == nil ? NSColor(white: 0.18, alpha: 1) : NSColor.black.withAlphaComponent(0.55)).setFill()
+            guard draftCrop != nil else {
+                // Applied crop: cut the outside away (transparent), so the cropped image floats on its own.
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current?.compositingOperation = .copy
+                NSColor.clear.setFill()
+                shade.fill()
+                NSGraphicsContext.restoreGraphicsState()
+                return
+            }
+            // Pending selection: dim the outside, dashed border.
+            NSColor.black.withAlphaComponent(0.55).setFill()
             shade.fill()
             let border = NSBezierPath(rect: c)
             border.lineWidth = 1
@@ -614,10 +639,14 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         scroll.allowsMagnification = true
         scroll.minMagnification = 0.1
         scroll.maxMagnification = 4
-        scroll.backgroundColor = NSColor(white: 0.18, alpha: 1)
-        scroll.drawsBackground = true
+        // Translucent background (blurred desktop behind the window): the canvas floats on it.
+        scroll.drawsBackground = false
+        scroll.contentView.drawsBackground = false
 
-        let content = NSView()
+        let content = NSVisualEffectView()
+        content.material = .underWindowBackground
+        content.blendingMode = .behindWindow
+        content.state = .active
         for v in [bar, scroll] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(v)
