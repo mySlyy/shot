@@ -1,5 +1,13 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.0.1
+
+- Editor Copy/Save on Retina: the shot filled only a corner at 50% scale, the
+  rest was transparent (pasted as white space, e.g. in Gmail). Now exactly the
+  captured or cropped area at 100% scale, pixel-identical.
+- Editor Copy/Save keep the shot's color profile (Display P3), no color shift.
+- Window captures without the window's drop shadow (no transparent margin).
+
 ## 2.0.0
 
 - Rebrand complete: "Shot" everywhere. Bundle ID ai.slyy.shot (was ai.slyy.snap),

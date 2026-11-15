@@ -1,0 +1,5 @@
+# Swift build output and release artefacts (shot/scripts/build.sh)
+shot/.build/
+shot/dist/
+.swiftpm/
+.DS_Store
