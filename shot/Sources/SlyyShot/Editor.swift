@@ -109,6 +109,16 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     private var draftCrop: CGRect?
     private var start = CGPoint.zero
 
+    /// Dragged crop selection big enough to use (Return not pressed yet); nil for a stray click.
+    private var pendingCrop: CGRect? {
+        guard let c = draftCrop, c.width > 4, c.height > 4 else { return nil }
+        return c.integral
+    }
+
+    /// Area Copy exports: the pending selection (shown un-shaded) wins over the applied crop, so Copy
+    /// takes what is on screen. Nothing is committed: no undo step, document stays unchanged.
+    var copyArea: CGRect? { pendingCrop ?? crop }
+
     var tool: Tool = .arrow {
         didSet {
             onToolChange?(tool)
@@ -356,9 +366,9 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             tool = t
         } else if event.keyCode == 51 || event.keyCode == 117, selected != nil { // Delete / forward delete
             deleteSelection()
-        } else if event.keyCode == 36 || event.keyCode == 76, let c = draftCrop, c.width > 4, c.height > 4 { // Return: crop
+        } else if event.keyCode == 36 || event.keyCode == 76, let c = pendingCrop { // Return: crop
             draftCrop = nil
-            commit { crop = c.integral }
+            commit { crop = c }
         } else if event.keyCode == 53 { // Esc: drop drafts, deselect, back to Move
             draft = nil
             selected = nil
@@ -468,8 +478,8 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
 
     // MARK: Export
 
-    /// The image with all marks, cropped, at the original pixel size, as PNG.
-    func renderedPNG() -> Data? {
+    /// The image with all marks, cut to `area` (view points; nil = whole image), at the original pixel size, as PNG.
+    func renderedPNG(cropTo area: CGRect?) -> Data? {
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: cg.width, pixelsHigh: cg.height,
                                          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -484,7 +494,7 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
         NSGraphicsContext.restoreGraphicsState()
 
         var out = rep
-        if let crop, let full = rep.cgImage {
+        if let crop = area, let full = rep.cgImage {
             let sx = CGFloat(cg.width) / size.width
             let sy = CGFloat(cg.height) / size.height
             // CGImage cropping uses a top-left origin.
@@ -677,7 +687,7 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
 
     @objc func copy(_ sender: Any?) {
         canvas.finishText()
-        guard let png = canvas.renderedPNG() else { return }
+        guard let png = canvas.renderedPNG(cropTo: canvas.copyArea) else { return }
         Clipboard.copy(png: png, file: nil)
         NSSound(named: "Tink")?.play()
     }
@@ -702,7 +712,7 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
 
     @discardableResult
     private func write(to target: URL) -> Bool {
-        guard let png = canvas.renderedPNG() else {
+        guard let png = canvas.renderedPNG(cropTo: canvas.crop) else {
             Alerts.info("Save failed", "Could not render the image.")
             return false
         }
