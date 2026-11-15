@@ -154,7 +154,7 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     override func draw(_ dirtyRect: NSRect) {
         var visible = marks
         if let i = editingIndex, visible.indices.contains(i) { visible.remove(at: i) }
-        render(draft.map { visible + [$0] } ?? visible, opacity: Self.screenOpacity)
+        render(draft.map { visible + [$0] } ?? visible)
         if let i = selected, i != editingIndex, marks.indices.contains(i) {
             let outline = NSBezierPath(rect: marks[i].bounds.insetBy(dx: -5, dy: -5))
             outline.setLineDash([4, 3], count: 2, phase: 0)
@@ -185,20 +185,16 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
         }
     }
 
-    /// On-screen opacity of the shot: 70% = 30% see-through, floating on the translucent editor background.
-    /// Annotations stay solid. Copy/Save render at 1 (pixel-identical export).
-    static let screenOpacity: CGFloat = 0.7
-
-    /// The shot at `opacity`, then the marks (solid; pixelation at the shot's opacity).
-    private func render(_ marks: [Mark], opacity: CGFloat = 1) {
+    /// The shot (always 100% opaque, on screen and in Copy/Save), then the marks.
+    private func render(_ marks: [Mark]) {
         let full = NSRect(origin: .zero, size: image.size)
-        image.draw(in: full, from: .zero, operation: .sourceOver, fraction: opacity)
-        for m in marks { draw(m, in: full, opacity: opacity) }
+        image.draw(in: full)
+        for m in marks { draw(m, in: full) }
     }
 
     nonisolated static func fontSize(_ width: CGFloat) -> CGFloat { 12 + width * 4 }
 
-    private func draw(_ m: Mark, in full: NSRect, opacity: CGFloat) {
+    private func draw(_ m: Mark, in full: NSRect) {
         m.color.setStroke()
         m.color.setFill()
         switch m.kind {
@@ -241,11 +237,7 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             NSGraphicsContext.saveGraphicsState()
             NSBezierPath(rect: r).addClip()
             if let pixelated {
-                // Clear first: at opacity < 1 the original under it would otherwise show through the pixelation.
-                NSGraphicsContext.current?.compositingOperation = .copy
-                NSColor.clear.setFill()
-                NSBezierPath(rect: r).fill()
-                pixelated.draw(in: full, from: .zero, operation: .sourceOver, fraction: opacity)
+                pixelated.draw(in: full)
             } else {
                 NSColor.black.setFill()
                 NSBezierPath(rect: r).fill()
@@ -580,6 +572,18 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
     private let colorWell = NSColorWell(frame: NSRect(x: 0, y: 0, width: 44, height: 24))
     private let widths = NSPopUpButton(frame: .zero, pullsDown: false)
     private static let widthSteps: [CGFloat] = [2, 4, 8]
+    /// Editor background around the shot: the former solid grey at 70% opacity (30% transparent).
+    static let canvasBackground = NSColor(white: 0.18, alpha: 0.7)
+
+    /// Borderless filled panel (honors the fill's alpha).
+    private static func panel(_ fill: NSColor) -> NSBox {
+        let box = NSBox()
+        box.boxType = .custom
+        box.fillColor = fill
+        box.borderWidth = 0
+        box.titlePosition = .noTitle
+        return box
+    }
     private var savedChangeCount = 0
 
     private var isDirty: Bool { canvas.changeCount != savedChangeCount }
@@ -593,6 +597,9 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
                           backing: .buffered, defer: false)
         super.init()
         window.isReleasedWhenClosed = false
+        // Transparent window: only the canvas background (70% grey) lets the desktop show through.
+        window.isOpaque = false
+        window.backgroundColor = .clear
         window.delegate = self
         window.minSize = NSSize(width: 560, height: 320)
         setURL(url)
@@ -659,19 +666,28 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         scroll.allowsMagnification = true
         scroll.minMagnification = 0.1
         scroll.maxMagnification = 4
-        // Translucent background (blurred desktop behind the window): the canvas floats on it.
+        // Area around the shot: grey at 70% opacity, so the desktop shows through 30% (sharp, no blur).
+        // The window itself is transparent (see init); the shot and the toolbar stay 100% opaque.
+        // Painted by a panel behind the scroll view: NSClipView paints its backgroundColor opaque, ignoring alpha.
         scroll.drawsBackground = false
         scroll.contentView.drawsBackground = false
+        let canvasBackground = Self.panel(Self.canvasBackground)
+        let barBackground = Self.panel(.windowBackgroundColor) // solid toolbar strip, adapts to light/dark
 
-        let content = NSVisualEffectView()
-        content.material = .underWindowBackground
-        content.blendingMode = .behindWindow
-        content.state = .active
-        for v in [bar, scroll] as [NSView] {
+        let content = NSView()
+        for v in [canvasBackground, barBackground, bar, scroll] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(v)
         }
         NSLayoutConstraint.activate([
+            canvasBackground.topAnchor.constraint(equalTo: scroll.topAnchor),
+            canvasBackground.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
+            canvasBackground.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+            canvasBackground.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            barBackground.topAnchor.constraint(equalTo: bar.topAnchor),
+            barBackground.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
+            barBackground.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            barBackground.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             bar.topAnchor.constraint(equalTo: content.topAnchor),
             bar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
