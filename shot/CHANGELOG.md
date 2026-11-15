@@ -1,5 +1,13 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.0.2
+
+- Editor: the shot is 30% see-through on screen (floats on the translucent
+  background); annotations stay solid. Copy/Save unchanged: fully opaque,
+  pixel-identical.
+- Editor: drop shadow only around the shot, never under it (would darken the
+  see-through shot); follows an applied crop.
+
 ## 2.0.1
 
 - Editor Copy/Save on Retina: the shot filled only a corner at 50% scale, the

@@ -102,7 +102,7 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     let image: NSImage
     private let pixelated: NSImage?
     private(set) var marks: [Mark] = []
-    private(set) var crop: CGRect? { didSet { updateShadow() } }
+    private(set) var crop: CGRect? { didSet { onCropChange?() } }
     private(set) var changeCount = 0
     private var undoStack: [([Mark], CGRect?)] = []
     private var draft: Mark?
@@ -130,30 +130,22 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     var lineWidth: CGFloat = 4 { didSet { styleTextField() } }
     var onChange: (() -> Void)?
     var onToolChange: ((Tool) -> Void)?
+    /// Applied crop changed (set/undone): the stage moves its shadow.
+    var onCropChange: (() -> Void)?
+
+    /// What is visible of the shot: the applied crop, else the whole image (view points).
+    var visibleArea: CGRect { crop ?? bounds }
 
     init(image: NSImage) {
         self.image = image
         self.pixelated = Self.pixelate(image)
         super.init(frame: NSRect(origin: .zero, size: image.size))
-        // Floating look: the image hovers over the translucent editor background with a soft shadow.
-        // NSView.shadow, not layer.shadow*: AppKit resets the layer's shadow from it when the view joins a window.
+        // Own layer: an applied crop clears the outside to transparent here, not in the stage below.
         wantsLayer = true
-        let floating = NSShadow()
-        floating.shadowColor = NSColor.black.withAlphaComponent(0.45)
-        floating.shadowBlurRadius = 16
-        floating.shadowOffset = NSSize(width: 0, height: -6)
-        shadow = floating
-        updateShadow()
     }
 
     required init?(coder: NSCoder) {
         fatalError("not used")
-    }
-
-    /// Shadow under the visible image only (the crop area once applied). An explicit path keeps it cheap:
-    /// no shadow re-rendering from the layer's alpha on every redraw while drawing marks.
-    private func updateShadow() {
-        layer?.shadowPath = CGPath(rect: crop ?? bounds, transform: nil)
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -162,7 +154,7 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     override func draw(_ dirtyRect: NSRect) {
         var visible = marks
         if let i = editingIndex, visible.indices.contains(i) { visible.remove(at: i) }
-        render(draft.map { visible + [$0] } ?? visible)
+        render(draft.map { visible + [$0] } ?? visible, opacity: Self.screenOpacity)
         if let i = selected, i != editingIndex, marks.indices.contains(i) {
             let outline = NSBezierPath(rect: marks[i].bounds.insetBy(dx: -5, dy: -5))
             outline.setLineDash([4, 3], count: 2, phase: 0)
@@ -193,15 +185,20 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
         }
     }
 
-    private func render(_ marks: [Mark]) {
+    /// On-screen opacity of the shot: 70% = 30% see-through, floating on the translucent editor background.
+    /// Annotations stay solid. Copy/Save render at 1 (pixel-identical export).
+    static let screenOpacity: CGFloat = 0.7
+
+    /// The shot at `opacity`, then the marks (solid; pixelation at the shot's opacity).
+    private func render(_ marks: [Mark], opacity: CGFloat = 1) {
         let full = NSRect(origin: .zero, size: image.size)
-        image.draw(in: full)
-        for m in marks { draw(m, in: full) }
+        image.draw(in: full, from: .zero, operation: .sourceOver, fraction: opacity)
+        for m in marks { draw(m, in: full, opacity: opacity) }
     }
 
     nonisolated static func fontSize(_ width: CGFloat) -> CGFloat { 12 + width * 4 }
 
-    private func draw(_ m: Mark, in full: NSRect) {
+    private func draw(_ m: Mark, in full: NSRect, opacity: CGFloat) {
         m.color.setStroke()
         m.color.setFill()
         switch m.kind {
@@ -244,7 +241,11 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             NSGraphicsContext.saveGraphicsState()
             NSBezierPath(rect: r).addClip()
             if let pixelated {
-                pixelated.draw(in: full)
+                // Clear first: at opacity < 1 the original under it would otherwise show through the pixelation.
+                NSGraphicsContext.current?.compositingOperation = .copy
+                NSColor.clear.setFill()
+                NSBezierPath(rect: r).fill()
+                pixelated.draw(in: full, from: .zero, operation: .sourceOver, fraction: opacity)
             } else {
                 NSColor.black.setFill()
                 NSBezierPath(rect: r).fill()
@@ -573,6 +574,7 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
     private(set) var url: URL
     let window: EditorWindow
     private let canvas: EditorCanvas
+    private let stage: FloatingStage
     private let scroll = NSScrollView()
     private let tools = NSSegmentedControl()
     private let colorWell = NSColorWell(frame: NSRect(x: 0, y: 0, width: 44, height: 24))
@@ -585,6 +587,7 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
     private init(url: URL, image: NSImage) {
         self.url = url
         canvas = EditorCanvas(image: image)
+        stage = FloatingStage(canvas: canvas)
         window = EditorWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
@@ -649,7 +652,7 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         bar.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
 
         scroll.contentView = CenteringClipView()
-        scroll.documentView = canvas
+        scroll.documentView = stage
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
@@ -683,7 +686,7 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
     private func show() {
         let barHeight: CGFloat = 44
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let img = canvas.image.size
+        let img = stage.frame.size // shot + shadow margin
         let fit = min(1, (visible.width * 0.85) / max(img.width, 1), (visible.height * 0.85 - barHeight) / max(img.height, 1))
         let size = NSSize(width: max(640, img.width * fit + 2), height: max(360, img.height * fit + barHeight + 2))
         window.setContentSize(size)
@@ -912,6 +915,44 @@ final class EditorWindow: NSWindow {
         let work = DispatchWorkItem { [weak self] in self?.onTitleClick?(p.rect) }
         clickWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
+    }
+}
+
+/// Scroll document: the canvas plus a margin with a soft drop shadow AROUND the visible shot, never under it
+/// (the shot is 30% see-through on screen; a shadow beneath would darken it). Follows an applied crop.
+final class FloatingStage: NSView {
+    static let margin: CGFloat = 32 // > shadow blur + offset
+    private let canvas: EditorCanvas
+
+    init(canvas: EditorCanvas) {
+        self.canvas = canvas
+        let m = Self.margin
+        super.init(frame: NSRect(x: 0, y: 0, width: canvas.frame.width + 2 * m, height: canvas.frame.height + 2 * m))
+        canvas.setFrameOrigin(NSPoint(x: m, y: m))
+        addSubview(canvas)
+        canvas.onCropChange = { [weak self] in self?.needsDisplay = true }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("not used")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let shot = canvas.visibleArea.offsetBy(dx: canvas.frame.minX, dy: canvas.frame.minY)
+        NSGraphicsContext.saveGraphicsState()
+        // Clip the shot out, then fill it with a shadow: only the shadow outside the shot remains.
+        let outside = NSBezierPath(rect: bounds)
+        outside.appendRect(shot)
+        outside.windingRule = .evenOdd
+        outside.addClip()
+        let s = NSShadow()
+        s.shadowColor = NSColor.black.withAlphaComponent(0.45)
+        s.shadowBlurRadius = 16
+        s.shadowOffset = NSSize(width: 0, height: -6)
+        s.set()
+        NSColor.black.setFill()
+        NSBezierPath(rect: shot).fill()
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 
