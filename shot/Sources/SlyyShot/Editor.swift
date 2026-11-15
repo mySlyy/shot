@@ -237,7 +237,9 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             NSGraphicsContext.saveGraphicsState()
             NSBezierPath(rect: r).addClip()
             if let pixelated {
-                pixelated.draw(in: full)
+                // .copy replaces the pixels: drawn over (sourceOver), translucent content under the
+                // pixelation (e.g. a see-through window) would stay readable in the export.
+                pixelated.draw(in: full, from: .zero, operation: .copy, fraction: 1)
             } else {
                 NSColor.black.setFill()
                 NSBezierPath(rect: r).fill()
