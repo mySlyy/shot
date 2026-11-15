@@ -1,5 +1,11 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.0.4
+
+- Editor pixelate (redaction): replaces the pixels instead of drawing over them.
+  Before, see-through content under a pixelation (e.g. a translucent window)
+  stayed readable in Copy/Save.
+
 ## 2.0.3
 
 - Editor: the shot is 100% opaque again (2.0.2 made it see-through by mistake).
