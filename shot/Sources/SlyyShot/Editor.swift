@@ -506,12 +506,19 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     /// The image with all marks, cut to `area` (view points; nil = whole image), at the original pixel size, as PNG.
     func renderedPNG(cropTo area: CGRect?) -> Data? {
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
-              let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: cg.width, pixelsHigh: cg.height,
+              var rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: cg.width, pixelsHigh: cg.height,
                                          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-              let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        // Keep the shot's color profile (Retina Macs: Display P3): converting to sRGB shifts saturated colors.
+        if let space = cg.colorSpace.flatMap(NSColorSpace.init(cgColorSpace:)), space.colorSpaceModel == .rgb,
+           let tagged = rep.retagging(with: space) {
+            rep = tagged
+        }
+        // Point size BEFORE the context: the context takes its scale from it. Created first (as up to 2.0.0),
+        // a Retina shot was drawn at 1x into the 2x bitmap: content in one corner at 50%, rest transparent.
         let size = image.size
         rep.size = size
+        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
         render(marks)

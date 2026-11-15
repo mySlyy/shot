@@ -22,7 +22,9 @@ final class Shooter {
             return
         }
         let (url, number) = Self.nextShot(in: folder)
-        var args = ["-x", "-t", "png"] // -x: no system sound (we play our own)
+        // -x: no system sound (we play our own); -o: windows without their drop shadow (else a wide
+        // transparent margin that pastes as whitespace), also for Space -> window mode in area capture.
+        var args = ["-x", "-o", "-t", "png"]
         switch mode {
         case .area: args.append("-i") // drag a rectangle; Space toggles window mode, Esc cancels
         case .window: args += ["-i", "-w"] // click a window
