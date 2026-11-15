@@ -13,6 +13,9 @@
 - Updates: accepted only when signed by the pinned Slyy Shot signer, also on
   ad-hoc builds (before, they skipped the signature check). Same pin in shot-install.sh.
 - Release feed and installer moved to github.com/mySlyy/shot.
+- Editor: floating look. Translucent background (blurred desktop behind), the
+  image casts a soft shadow; an applied crop cuts the outside away instead of
+  graying it.
 
 ## 1.4.0
 
