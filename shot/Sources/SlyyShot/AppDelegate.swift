@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.mainMenu = Self.mainMenu()
         let shooterForRename = shooter
         Editor.onRename = { old, new in shooterForRename.fileRenamed(from: old, to: new) }
+        Editor.onDelete = { url in shooterForRename.fileDeleted(url) }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {

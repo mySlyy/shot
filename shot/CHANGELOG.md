@@ -1,5 +1,12 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.1.0
+
+- Editor: Delete button (next to Copy): moves the shot to the Trash and closes
+  the editor (restore from the Trash if needed).
+- Editor: Blur tool (B): drag an area to blur it strongly; movable,
+  undoable like Pixelate. Copy/Save replace the pixels (no see-through leak).
+
 ## 2.0.4
 
 - Editor pixelate (redaction): replaces the pixels instead of drawing over them.
