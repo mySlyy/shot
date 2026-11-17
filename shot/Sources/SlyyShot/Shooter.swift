@@ -215,6 +215,7 @@ private let legacySkip: Set<String> = ["hadScreenAccess", "skippedVersion", "cle
     guard !Settings.shortcutsHintShown else { return }
     Settings.shortcutsHintShown = true
     if Alerts.confirm("Use ⌘⇧3 / ⌘⇧4 / ⌘⇧5 for Slyy Shot", "Slyy Shot captures the screen (⌘⇧3), a window (⌘⇧4) and an area (⌘⇧5). "
-                      + "macOS uses these keys for its own screenshot tool: switch off \"Screenshots\" under Keyboard Shortcuts.",
+                      + "macOS uses these keys for its own screenshot tool: switch off \"Screenshots\" under Keyboard Shortcuts, "
+                      + "or pick other keys in Slyy Shot under Options > Keyboard Shortcuts….",
                       "Open Keyboard Shortcuts", cancel: "Later") { Alerts.openSettings("com.apple.Keyboard-Settings.extension") }
 }
