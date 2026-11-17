@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 // (undoable) and flattened into the PNG on save/copy.
 
 enum Tool: Int, CaseIterable {
-    case move, arrow, rect, ellipse, highlight, text, pixelate, crop
+    case move, arrow, rect, ellipse, highlight, text, pixelate, blur, crop
 
     private var info: (title: String, symbol: String, key: String) {
         switch self {
@@ -17,6 +17,7 @@ enum Tool: Int, CaseIterable {
         case .highlight: return ("Highlight (H)", "highlighter", "h")
         case .text: return ("Text (T)", "textformat", "t")
         case .pixelate: return ("Pixelate (X)", "square.grid.3x3.fill", "x")
+        case .blur: return ("Blur (B)", "drop.halffull", "b")
         case .crop: return ("Crop (C)", "crop", "c")
         }
     }
@@ -34,6 +35,7 @@ struct Mark {
         case highlight(CGRect)
         case text(CGPoint, String)
         case pixelate(CGRect)
+        case blur(CGRect)
     }
 
     var kind: Kind
@@ -50,6 +52,7 @@ struct Mark {
         case .highlight(let r): m.kind = .highlight(r.offsetBy(dx: dx, dy: dy))
         case .text(let p, let s): m.kind = .text(o(p), s)
         case .pixelate(let r): m.kind = .pixelate(r.offsetBy(dx: dx, dy: dy))
+        case .blur(let r): m.kind = .blur(r.offsetBy(dx: dx, dy: dy))
         }
         return m
     }
@@ -71,7 +74,7 @@ struct Mark {
             let rx = max(r.width / 2, 1), ry = max(r.height / 2, 1)
             let d = hypot((p.x - r.midX) / rx, (p.y - r.midY) / ry)
             return abs(d - 1) * min(rx, ry) <= tol
-        case .highlight(let r), .pixelate(let r):
+        case .highlight(let r), .pixelate(let r), .blur(let r):
             return r.insetBy(dx: -tol, dy: -tol).contains(p)
         case .text:
             return bounds.insetBy(dx: -4, dy: -4).contains(p)
@@ -81,7 +84,7 @@ struct Mark {
     var bounds: CGRect {
         switch kind {
         case .arrow(let a, let b): return CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
-        case .rect(let r), .ellipse(let r), .highlight(let r), .pixelate(let r): return r
+        case .rect(let r), .ellipse(let r), .highlight(let r), .pixelate(let r), .blur(let r): return r
         case .text(let at, let s):
             let size = (s as NSString).size(withAttributes: [.font: NSFont.boldSystemFont(ofSize: EditorCanvas.fontSize(width))])
             return CGRect(origin: at, size: size)
@@ -91,7 +94,7 @@ struct Mark {
     var isMeaningful: Bool {
         switch kind {
         case .arrow(let a, let b): return hypot(b.x - a.x, b.y - a.y) > 4
-        case .rect(let r), .ellipse(let r), .highlight(let r), .pixelate(let r): return r.width > 3 && r.height > 3
+        case .rect(let r), .ellipse(let r), .highlight(let r), .pixelate(let r), .blur(let r): return r.width > 3 && r.height > 3
         case .text(_, let s): return !s.isEmpty
         }
     }
@@ -101,6 +104,8 @@ struct Mark {
 final class EditorCanvas: NSView, NSTextFieldDelegate {
     let image: NSImage
     private let pixelated: NSImage?
+    /// Blurred copy of the whole shot, made on first use of the Blur tool.
+    private lazy var blurred: NSImage? = Self.blur(image)
     private(set) var marks: [Mark] = []
     private(set) var crop: CGRect? { didSet { onCropChange?() } }
     private(set) var changeCount = 0
@@ -234,27 +239,49 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             ]
             (s as NSString).draw(at: at, withAttributes: attrs)
         case .pixelate(let r):
-            NSGraphicsContext.saveGraphicsState()
-            NSBezierPath(rect: r).addClip()
-            if let pixelated {
-                // .copy replaces the pixels: drawn over (sourceOver), translucent content under the
-                // pixelation (e.g. a see-through window) would stay readable in the export.
-                pixelated.draw(in: full, from: .zero, operation: .copy, fraction: 1)
-            } else {
-                NSColor.black.setFill()
-                NSBezierPath(rect: r).fill()
-            }
-            NSGraphicsContext.restoreGraphicsState()
+            replace(r, with: pixelated, in: full)
+        case .blur(let r):
+            replace(r, with: blurred, in: full)
         }
     }
 
+    /// Pixelate/Blur: the area `r` shows the filtered copy of the shot (black if the filter failed).
+    /// .copy replaces the pixels: drawn over (sourceOver), translucent content under it (e.g. a
+    /// see-through window) would stay readable in the export.
+    private func replace(_ r: CGRect, with filtered: NSImage?, in full: NSRect) {
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: r).addClip()
+        if let filtered {
+            filtered.draw(in: full, from: .zero, operation: .copy, fraction: 1)
+        } else {
+            NSColor.black.setFill()
+            NSBezierPath(rect: r).fill()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
     private static func pixelate(_ image: NSImage) -> NSImage? {
+        filtered(image, "CIPixellate") { filter, width in
+            filter.setValue(max(8, width / 100), forKey: kCIInputScaleKey)
+            filter.setValue(CIVector(x: 0, y: 0), forKey: kCIInputCenterKey)
+        }
+    }
+
+    /// Strong Gaussian blur (radius ~1% of the shot width, at least 12 px): text underneath is unreadable.
+    private static func blur(_ image: NSImage) -> NSImage? {
+        filtered(image, "CIGaussianBlur") { filter, width in
+            filter.setValue(max(12, width / 100), forKey: kCIInputRadiusKey)
+        }
+    }
+
+    /// The whole shot through a Core Image filter, at its pixel size. Edges clamped, so the border
+    /// does not fade to transparent.
+    private static func filtered(_ image: NSImage, _ name: String, _ configure: (CIFilter, CGFloat) -> Void) -> NSImage? {
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
-              let filter = CIFilter(name: "CIPixellate") else { return nil }
+              let filter = CIFilter(name: name) else { return nil }
         let input = CIImage(cgImage: cg)
         filter.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
-        filter.setValue(max(8, CGFloat(cg.width) / 100), forKey: kCIInputScaleKey)
-        filter.setValue(CIVector(x: 0, y: 0), forKey: kCIInputCenterKey)
+        configure(filter, CGFloat(cg.width))
         guard let output = filter.outputImage?.cropped(to: input.extent),
               let result = CIContext().createCGImage(output, from: input.extent) else { return nil }
         return NSImage(cgImage: result, size: image.size)
@@ -352,6 +379,7 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
         case .ellipse: draft = Mark(kind: .ellipse(r), color: color, width: lineWidth)
         case .highlight: draft = Mark(kind: .highlight(r), color: color, width: lineWidth)
         case .pixelate: draft = Mark(kind: .pixelate(r), color: color, width: lineWidth)
+        case .blur: draft = Mark(kind: .blur(r), color: color, width: lineWidth)
         case .crop: draftCrop = r
         case .move, .text: break
         }
@@ -541,6 +569,8 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
     private static var editors: [Editor] = []
     /// Called after a file was renamed in an editor (old URL, new URL).
     static var onRename: ((URL, URL) -> Void)?
+    /// File moved to the Trash by the Delete button.
+    static var onDelete: ((URL) -> Void)?
 
     static func open(_ url: URL) {
         if let existing = editors.first(where: { $0.url == url }) {
@@ -648,14 +678,16 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         let undo = NSButton(title: "Undo", target: self, action: #selector(undoMark(_:)))
         let copy = NSButton(title: "Copy", target: self, action: #selector(copy(_:)))
         let save = NSButton(title: "Save", target: self, action: #selector(saveDocument(_:)))
+        let delete = NSButton(title: "Delete", target: self, action: #selector(deleteShot(_:)))
         save.bezelColor = .controlAccentColor
         undo.toolTip = "Undo (⌘Z)"
         copy.toolTip = "Copy image (⌘C)"
         save.toolTip = "Save (⌘S); Save As: ⇧⌘S"
+        delete.toolTip = "Move the shot to the Trash and close"
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let bar = NSStackView(views: [tools, colorWell, widths, spacer, undo, copy, save])
+        let bar = NSStackView(views: [tools, colorWell, widths, spacer, undo, delete, copy, save])
         bar.orientation = .horizontal
         bar.spacing = 8
         bar.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
@@ -747,6 +779,22 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         guard let png = canvas.renderedPNG(cropTo: canvas.copyArea) else { return }
         Clipboard.copy(png: png, file: nil)
         NSSound(named: "Tink")?.play()
+    }
+
+    /// Moves the file to the Trash (recoverable there) and closes without the save prompt.
+    /// No shortcut: ⌘⌫ would also fire while typing a text mark.
+    @objc func deleteShot(_ sender: Any?) {
+        canvas.finishText()
+        let old = url
+        do {
+            try FileManager.default.trashItem(at: old, resultingItemURL: nil)
+        } catch {
+            Alerts.info("Cannot delete", error.localizedDescription)
+            return
+        }
+        NSSound(named: "Funk")?.play()
+        Editor.onDelete?(old)
+        window.close() // close() skips windowShouldClose, so no "Save changes?" for a trashed file
     }
 
     private var canSaveInPlace: Bool { url.pathExtension.lowercased() == "png" }

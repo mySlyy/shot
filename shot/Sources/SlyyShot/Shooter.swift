@@ -81,6 +81,11 @@ final class Shooter {
         if lastShot == old { lastShot = new }
     }
 
+    /// Editor's Delete button trashed the file: "Last Shot" items no longer point to it.
+    func fileDeleted(_ url: URL) {
+        if lastShot == url { lastShot = nil }
+    }
+
     func editLast() {
         if let lastShot { Editor.open(lastShot) }
     }
