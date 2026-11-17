@@ -1,5 +1,12 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.2.0
+
+- Shortcuts for Capture Area / Window / Screen are mappable: Options > Keyboard
+  Shortcuts…, click one and press the new keys (with ⌘, ⌥ or ⌃, or an F-key
+  alone). ⌫ removes a shortcut, "Default" restores ⌘⇧5/4/3. Keys already used by
+  another Slyy Shot shortcut are refused; the menu shows the current keys.
+
 ## 2.1.0
 
 - Editor: Delete button (next to Copy): moves the shot to the Trash and closes

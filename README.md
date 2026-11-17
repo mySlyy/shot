@@ -3,7 +3,8 @@
 Personal screenshot tool, macOS 13+ (Apple Silicon + Intel). https://slyy.ai
 
 Menu bar app: ⌘⇧5 area, ⌘⇧4 window, ⌘⇧3 screen (switch off the
-macOS "Screenshots" keyboard shortcuts). Saves PNGs to
+macOS "Screenshots" keyboard shortcuts, or map other keys under Options >
+Keyboard Shortcuts…). Saves PNGs to
 ~/Pictures/Slyy Shot and copies them to the clipboard.
 
 ## Installation

@@ -29,13 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
-        // ⌘⇧5 area, ⌘⇧4 window, ⌘⇧3 screen (macOS' own screenshot shortcuts must be off), ⌃⇧E edit last.
-        let mods = cmdKey | shiftKey
+        // Capture shortcuts: user-mappable (Options > Keyboard Shortcuts…), default ⌘⇧5 area, ⌘⇧4 window,
+        // ⌘⇧3 screen (macOS' own screenshot shortcuts must be off for those). ⌃⇧E edit last: fixed.
         let shooter = self.shooter
-        HotKeys.shared.register(id: 1, keyCode: kVK_ANSI_5, modifiers: mods) { shooter.capture(.area) }
-        HotKeys.shared.register(id: 2, keyCode: kVK_ANSI_4, modifiers: mods) { shooter.capture(.window) }
-        HotKeys.shared.register(id: 3, keyCode: kVK_ANSI_3, modifiers: mods) { shooter.capture(.screen) }
-        HotKeys.shared.register(id: 4, keyCode: kVK_ANSI_E, modifiers: controlKey | shiftKey) { shooter.editLast() }
+        ShortcutRegistry.capture = { mode in shooter.capture(mode) }
+        ShortcutRegistry.applyAll()
+        let edit = ShortcutAction.editLast
+        HotKeys.shared.register(id: ShortcutAction.editLastID, keyCode: edit.keyCode, modifiers: edit.modifiers) { shooter.editLast() }
         offerToFreeSystemShortcuts()
 
         // Updates: 10 s after launch, then every 6 h (if enabled).
@@ -111,9 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let shooter = self.shooter
         let updater = self.updater
 
-        menu.addItem(ActionItem("Capture Area", key: "5", mods: [.command, .shift]) { shooter.capture(.area) })
-        menu.addItem(ActionItem("Capture Window", key: "4", mods: [.command, .shift]) { shooter.capture(.window) })
-        menu.addItem(ActionItem("Capture Screen", key: "3", mods: [.command, .shift]) { shooter.capture(.screen) })
+        for action in ShortcutAction.allCases { // shows the current (mapped) keys
+            let s = Settings.shortcut(for: action)
+            menu.addItem(ActionItem(action.title, key: s?.key ?? "", mods: s?.menuModifiers ?? []) { shooter.capture(action.mode) })
+        }
         menu.addItem(.separator())
 
         let hasLast = shooter.lastShot != nil
@@ -127,6 +128,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let options = NSMenu()
         options.autoenablesItems = false
+        options.addItem(ActionItem("Keyboard Shortcuts…") { ShortcutsWindow.show() })
+        options.addItem(.separator())
         options.addItem(ActionItem("Open Editor After Capture", state: Settings.openEditor) {
             Settings.openEditor.toggle()
         })
