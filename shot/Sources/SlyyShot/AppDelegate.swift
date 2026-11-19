@@ -157,6 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         optionsItem.submenu = options
         menu.addItem(optionsItem)
         menu.addItem(ActionItem("Check for Updates…") { updater.check(userInitiated: true) })
+        menu.addItem(ActionItem("Report a Bug…") { BugReport.open() }) // public tracker mySlyy/releases
         menu.addItem(.separator())
         menu.addItem(ActionItem("Slyy Shot \(Version.current)", enabled: false) {})
         menu.addItem(ActionItem("Quit Slyy Shot", key: "q", mods: .command) { NSApp.terminate(nil) })
