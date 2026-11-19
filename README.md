@@ -28,6 +28,13 @@ signature verified). Updates and the installer accept only builds by the pinned 
 `shot/Resources/update_signer.req` (copy in `shot-install.sh` SIGNER_REQ; the release
 workflow checks both match and refuses ad-hoc releases).
 
+## Bugs
+
+Menu > Report a Bug… opens the Slyy Shot form (`shot_bug_report.yml`) on the public
+tracker https://github.com/mySlyy/releases/issues (shared with Slyy desktop), with
+version, macOS and chip filled in. The form lives in that repo; its field ids
+`app-version` / `environment` must match `shot/Sources/SlyyShot/BugReport.swift`.
+
 ## Releases
 
 Releases are the `slyy-shot-v*` tags (never "Latest"; the rolling `slyy-shot-latest`

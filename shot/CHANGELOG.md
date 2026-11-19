@@ -1,5 +1,11 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.2.1
+
+- Menu: "Report a Bug…" opens the Slyy Shot bug form on the public tracker
+  github.com/mySlyy/releases/issues, with app version, macOS and chip filled in.
+  Updates still come from github.com/mySlyy/shot.
+
 ## 2.2.0
 
 - Shortcuts for Capture Area / Window / Screen are mappable: Options > Keyboard
