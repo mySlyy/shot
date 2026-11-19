@@ -38,7 +38,10 @@ concurrency: slyy-shot-release
 
 jobs:
   release:
-    runs-on: macos-15-intel # arm64 runners often lack capacity; builds are universal either way
+    # Runner from repo variable SHOT_RUNNER (JSON), e.g. '["self-hosted","macOS","ARM64","slyy-shot"]' for
+    # the Mac set up by scripts/self_hosted_runner.py; unset = GitHub-hosted (arm64 often lacks capacity;
+    # builds are universal either way). Mac asleep/offline: jobs queue; delete the variable to fall back.
+    runs-on: ${{ fromJSON(vars.SHOT_RUNNER || '"macos-15-intel"') }}
     env:
       INPUT_VERSION: ${{ inputs.version }}
       SHOT_SIGN_P12: ${{ secrets.SHOT_SIGN_P12 }}
@@ -157,3 +160,15 @@ jobs:
             --target "$GITHUB_SHA" \
             --latest=false
           gh workflow run slyy-shot-latest.yml -f version="$VERSION"
+
+      - name: Clean up signing material
+        # Self-hosted runners persist: drop the temp keychain from the search list and delete it, and the
+        # notary key (RUNNER_TEMP is wiped anyway; the search list is not).
+        if: always()
+        run: |
+          kc="$RUNNER_TEMP/shot.keychain-db"
+          if [ -e "$kc" ]; then
+            security list-keychains -d user -s $(security list-keychains -d user | tr -d '"' | sed 's/^ *//' | grep -vxF "$kc")
+            security delete-keychain "$kc" || true
+          fi
+          rm -f "$RUNNER_TEMP/notary.p8"
