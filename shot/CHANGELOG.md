@@ -1,5 +1,9 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.2.2
+
+- Menu: "Report a Bug…" removed again (added in 2.2.1).
+
 ## 2.2.1
 
 - Menu: "Report a Bug…" opens the Slyy Shot bug form on the public tracker
