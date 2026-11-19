@@ -55,13 +55,21 @@ def run(cmd, **kw):
         sys.exit(f"failed: {' '.join(cmd)}\n{e.stderr or e.stdout}")
 
 
-def as_user(cmd, env=None):
+def as_user(cmd, env=None, cwd=RUNNER_DIR, stdin=None):
     """Run as the runner user (runner files must be owned by it). Drops root via
     setuid/setgid (no supplementary groups); env is passed directly, so secrets
-    never appear in a process list (sudo env VAR=... would show them)."""
+    never appear in a process list (sudo env VAR=... would show them).
+    Everything inside HOME is written this way: root never chowns/creates paths
+    ghrunner controls (a planted symlink/hardlink, e.g. to /etc/sudoers, would
+    otherwise hand that file to ghrunner)."""
     base = {"HOME": HOME, "USER": USER, "LOGNAME": USER, "LANG": "de_DE.UTF-8",
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
-    return run(cmd, cwd=RUNNER_DIR, user=USER, group=USER, extra_groups=[], env={**base, **(env or {})})
+    try:
+        r = subprocess.run(cmd, cwd=cwd, user=USER, group=USER, extra_groups=[], env={**base, **(env or {})},
+                           stdin=stdin, capture_output=True, check=True)
+    except subprocess.CalledProcessError as e:
+        sys.exit(f"failed (as {USER}): {' '.join(cmd)}\n{(e.stderr or e.stdout).decode(errors='replace')}")
+    return r.stdout.decode(errors="replace")
 
 
 def gh(*args):
@@ -103,7 +111,7 @@ def create_user():
             run(["dscl", ".", "-create", u, k, str(v)])
         run(["dscl", ".", "-create", u, "Password", "*"])  # no password: cannot log in
         print(f"created user {USER} (uid/gid {xid})")
-    os.makedirs(HOME, exist_ok=True)
+    os.makedirs(HOME, exist_ok=True)  # /Users is root-owned: ghrunner cannot swap HOME for a symlink
     pw = pwd.getpwnam(USER)
     os.chown(HOME, pw.pw_uid, pw.pw_gid)
     os.chmod(HOME, 0o700)
@@ -135,16 +143,18 @@ def install_runner():
         return
     url, sha = runner_release()
     print(f"downloading {url}")
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory() as tmp:  # root-only 700
         tgz = os.path.join(tmp, "runner.tar.gz")
         urllib.request.urlretrieve(url, tgz)
         h = hashlib.sha256(open(tgz, "rb").read()).hexdigest()
         if h != sha:
             sys.exit(f"SHA-256 mismatch: got {h}, want {sha}")
-        os.makedirs(RUNNER_DIR, exist_ok=True)
-        # bsdtar refuses absolute paths and ".." escapes by default (system Python 3.9 has no tarfile filter)
-        run(["tar", "-xzf", tgz, "-C", RUNNER_DIR])
-    run(["chown", "-R", f"{USER}:{USER}", RUNNER_DIR])
+        # Leftover, unregistered dir: wipe and recreate as ghrunner; unpack as ghrunner from stdin
+        # (bsdtar refuses absolute paths and ".." escapes; system Python 3.9 has no tarfile filter).
+        as_user(["rm", "-rf", RUNNER_DIR], cwd=HOME)
+        as_user(["mkdir", RUNNER_DIR], cwd=HOME)
+        with open(tgz, "rb") as f:
+            as_user(["tar", "-xzf", "-", "-C", RUNNER_DIR], stdin=f)
     token = gh("api", "-X", "POST", f"repos/{REPO}/actions/runners/registration-token", "--jq", ".token")
     as_user(["./config.sh", "--unattended", "--replace", "--url", f"https://github.com/{REPO}",
              "--name", RUNNER_NAME, "--labels", RUNNER_LABELS, "--work", "_work"],
@@ -170,11 +180,9 @@ def install_daemon():
             "LANG": "de_DE.UTF-8",
             "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
         },
-        "StandardOutPath": f"{RUNNER_DIR}/_diag/launchd.log",
-        "StandardErrorPath": f"{RUNNER_DIR}/_diag/launchd.log",
+        # No StandardOut/ErrorPath: launchd would open it as root inside ghrunner's tree (symlink
+        # attack); the runner writes its own logs to ~ghrunner/actions-runner/_diag/.
     }
-    os.makedirs(f"{RUNNER_DIR}/_diag", exist_ok=True)
-    run(["chown", f"{USER}:{USER}", f"{RUNNER_DIR}/_diag"])
     subprocess.run(["launchctl", "bootout", f"system/{LABEL}"], capture_output=True)
     with open(PLIST, "wb") as f:
         plistlib.dump(plist, f)
