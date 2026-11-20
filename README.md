@@ -33,3 +33,17 @@ workflow checks both match and refuses ad-hoc releases).
 Releases are the `slyy-shot-v*` tags (never "Latest"; the rolling `slyy-shot-latest`
 release holds the newest DMG); source in `shot/`, built and published by
 `.github/workflows/slyy-shot.yml`.
+
+## Release runner
+
+The release job runs on the runner named in repo variable `SHOT_RUNNER` (JSON); unset =
+GitHub-hosted `macos-15-intel`. Own Mac: `scripts/self_hosted_runner.py`.
+
+- `sudo python3 scripts/self_hosted_runner.py install`: hidden user `ghrunner` (own group,
+  not staff: cannot read your home), runner `slyy-shot-mac` (label `slyy-shot`, tarball
+  SHA-256 checked) as LaunchDaemon `ai.slyy.ghrunner.shot`. `status`, `uninstall [--delete-user]`.
+- Use it: `gh variable set SHOT_RUNNER -R mySlyy/shot --body '["self-hosted","macOS","ARM64","slyy-shot"]'`.
+  Fall back: `gh variable delete SHOT_RUNNER -R mySlyy/shot`.
+- Mac asleep/offline: release jobs wait in the queue (max 24 h).
+- Public repo: only tags and manual runs start the job; fork PR workflows need approval
+  (all outside contributors). Never add `pull_request` triggers on this runner.
