@@ -24,10 +24,15 @@ extension NSColor {
         (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
     }
 
-    /// Black or white, whichever has the higher contrast ratio on this color
-    /// (white wins below L ≈ 0.179, e.g. red, blue, dark colors; black on yellow, light green, white).
+    /// WCAG AA minimum for large text (>= 14 pt bold); badge digits are always that (Thin = 14.4 pt bold).
+    static let largeTextMinimum: CGFloat = 3
+
+    /// White or black text on this color. White wins whenever it reaches AA for large text (3:1,
+    /// i.e. L <= ~0.30: red, system blue, magenta, mid grey), even if black would contrast a bit more;
+    /// below that, the higher contrast wins (black on orange, green, yellow, white).
     var contrastingTextColor: NSColor {
         let l = relativeLuminance
-        return Self.contrastRatio(l, 1) >= Self.contrastRatio(l, 0) ? .white : .black
+        let white = Self.contrastRatio(l, 1)
+        return white >= Self.largeTextMinimum || white >= Self.contrastRatio(l, 0) ? .white : .black
     }
 }

@@ -4,8 +4,8 @@
 
 - Editor: Number tool (N, "#"): each click places the next number (1, 2, 3 …) on a
   rounded badge in the chosen color, to mark and refer to areas of a shot. Digit is
-  black or white, whichever contrasts more with the badge (WCAG relative
-  luminance). Size follows Thin/Medium/Thick; badges move, recolor, delete and undo
+  white when it reaches WCAG AA for large text (3:1, e.g. on red or blue),
+  else black or white by the higher contrast (WCAG relative luminance). Size follows Thin/Medium/Thick; badges move, recolor, delete and undo
   like other marks. Next number = highest on the shot + 1.
 
 ## 2.2.2
