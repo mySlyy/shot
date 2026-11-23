@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 // (undoable) and flattened into the PNG on save/copy.
 
 enum Tool: Int, CaseIterable {
-    case move, arrow, rect, ellipse, highlight, text, pixelate, blur, crop
+    case move, arrow, rect, ellipse, highlight, text, number, pixelate, blur, crop
 
     private var info: (title: String, symbol: String, key: String) {
         switch self {
@@ -16,6 +16,7 @@ enum Tool: Int, CaseIterable {
         case .ellipse: return ("Ellipse (O)", "circle", "o")
         case .highlight: return ("Highlight (H)", "highlighter", "h")
         case .text: return ("Text (T)", "textformat", "t")
+        case .number: return ("Number (N)", "number", "n")
         case .pixelate: return ("Pixelate (X)", "square.grid.3x3.fill", "x")
         case .blur: return ("Blur (B)", "drop.halffull", "b")
         case .crop: return ("Crop (C)", "crop", "c")
@@ -34,6 +35,8 @@ struct Mark {
         case ellipse(CGRect)
         case highlight(CGRect)
         case text(CGPoint, String)
+        /// Numbered badge (Number tool): center, number shown.
+        case number(CGPoint, Int)
         case pixelate(CGRect)
         case blur(CGRect)
     }
@@ -51,6 +54,7 @@ struct Mark {
         case .ellipse(let r): m.kind = .ellipse(r.offsetBy(dx: dx, dy: dy))
         case .highlight(let r): m.kind = .highlight(r.offsetBy(dx: dx, dy: dy))
         case .text(let p, let s): m.kind = .text(o(p), s)
+        case .number(let p, let n): m.kind = .number(o(p), n)
         case .pixelate(let r): m.kind = .pixelate(r.offsetBy(dx: dx, dy: dy))
         case .blur(let r): m.kind = .blur(r.offsetBy(dx: dx, dy: dy))
         }
@@ -76,7 +80,7 @@ struct Mark {
             return abs(d - 1) * min(rx, ry) <= tol
         case .highlight(let r), .pixelate(let r), .blur(let r):
             return r.insetBy(dx: -tol, dy: -tol).contains(p)
-        case .text:
+        case .text, .number:
             return bounds.insetBy(dx: -4, dy: -4).contains(p)
         }
     }
@@ -88,6 +92,8 @@ struct Mark {
         case .text(let at, let s):
             let size = (s as NSString).size(withAttributes: [.font: NSFont.boldSystemFont(ofSize: EditorCanvas.fontSize(width))])
             return CGRect(origin: at, size: size)
+        case .number(let center, let n):
+            return EditorCanvas.badge(n, at: center, width: width).rect
         }
     }
 
@@ -96,6 +102,7 @@ struct Mark {
         case .arrow(let a, let b): return hypot(b.x - a.x, b.y - a.y) > 4
         case .rect(let r), .ellipse(let r), .highlight(let r), .pixelate(let r), .blur(let r): return r.width > 3 && r.height > 3
         case .text(_, let s): return !s.isEmpty
+        case .number: return true
         }
     }
 }
@@ -199,6 +206,26 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
 
     nonisolated static func fontSize(_ width: CGFloat) -> CGFloat { 12 + width * 4 }
 
+    /// Number badge geometry, shared by drawing and hit-testing: a circle for one digit, a pill for more.
+    /// Size follows the line width like text (Thin/Medium/Thick); digits are monospaced and bold.
+    nonisolated static func badge(_ n: Int, at center: CGPoint, width: CGFloat)
+        -> (rect: CGRect, text: String, font: NSFont, textWidth: CGFloat, baseline: CGFloat) {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize(width) * 0.72, weight: .bold)
+        let text = String(n)
+        let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
+        let height = ceil(font.pointSize * 1.6)
+        let w = max(height, textWidth + height * 0.6)
+        let rect = CGRect(x: center.x - w / 2, y: center.y - height / 2, width: w, height: height)
+        // Digits are cap-height tall: baseline half a cap height below the center centers them optically.
+        return (rect, text, font, textWidth, center.y - font.capHeight / 2)
+    }
+
+    /// Next number for the Number tool: one above the highest on the shot (1 on a fresh shot), so a
+    /// deleted or moved badge never causes a duplicate. Undo brings the count back with the marks.
+    private var nextNumber: Int {
+        marks.reduce(0) { top, m in if case .number(_, let n) = m.kind { return max(top, n) } else { return top } } + 1
+    }
+
     private func draw(_ m: Mark, in full: NSRect) {
         m.color.setStroke()
         m.color.setFill()
@@ -238,6 +265,19 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
                 .shadow: shadow,
             ]
             (s as NSString).draw(at: at, withAttributes: attrs)
+        case .number(let center, let n):
+            // Rounded badge in the mark color; the digit black or white by WCAG contrast (Contrast.swift).
+            let b = Self.badge(n, at: center, width: m.width)
+            NSGraphicsContext.saveGraphicsState()
+            let shadow = NSShadow() // lifts the badge off backgrounds of a similar color
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
+            shadow.shadowBlurRadius = 3
+            shadow.shadowOffset = NSSize(width: 0, height: -1)
+            shadow.set()
+            NSBezierPath(roundedRect: b.rect, xRadius: b.rect.height / 2, yRadius: b.rect.height / 2).fill()
+            NSGraphicsContext.restoreGraphicsState()
+            (b.text as NSString).draw(with: CGRect(x: b.rect.midX - b.textWidth / 2, y: b.baseline, width: b.textWidth, height: 0),
+                                      options: [], attributes: [.font: b.font, .foregroundColor: m.color.contrastingTextColor])
         case .pixelate(let r):
             replace(r, with: pixelated, in: full)
         case .blur(let r):
@@ -362,6 +402,11 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             return
         }
         selected = nil
+        if tool == .number { // one click places the next number, centered on the click
+            let mark = Mark(kind: .number(start, nextNumber), color: color, width: lineWidth)
+            commit { marks.append(mark) }
+            return
+        }
         if tool == .text { openTextField(text: "", at: CGPoint(x: start.x - 3, y: start.y - Self.fieldHeight(lineWidth) / 2)) }
     }
 
@@ -381,7 +426,7 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
         case .pixelate: draft = Mark(kind: .pixelate(r), color: color, width: lineWidth)
         case .blur: draft = Mark(kind: .blur(r), color: color, width: lineWidth)
         case .crop: draftCrop = r
-        case .move, .text: break
+        case .move, .text, .number: break
         }
         needsDisplay = true
     }
@@ -673,7 +718,7 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         widths.selectItem(at: 1)
         widths.target = self
         widths.action = #selector(widthChanged(_:))
-        widths.toolTip = "Line width / text size"
+        widths.toolTip = "Line width / text and number size"
 
         let undo = NSButton(title: "Undo", target: self, action: #selector(undoMark(_:)))
         let copy = NSButton(title: "Copy", target: self, action: #selector(copy(_:)))
