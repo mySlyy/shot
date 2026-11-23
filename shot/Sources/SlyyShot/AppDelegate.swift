@@ -49,6 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Images opened from Finder (Open With, dropped on the app icon; types in Info.plist
+    /// CFBundleDocumentTypes): each in its own editor, like "Open Image in Editor…".
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls { Editor.open(url) }
+    }
+
     /// Slyy dot inside viewfinder corners; template image, so macOS tints it
     /// for light/dark menu bars.
     private static func menuBarIcon() -> NSImage {
