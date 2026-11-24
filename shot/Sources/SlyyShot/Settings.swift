@@ -29,6 +29,8 @@ enum Settings {
     @Pref("shortcutsHintShown", false) static var shortcutsHintShown: Bool
     @Pref("cleanupAskedVersion", "") static var cleanupAskedVersion: String
     @Pref("skippedVersion", nil) static var skippedVersion: String?
+    /// Editor > Resize Image (⇧⌘R): last percentage used, 75 until the first resize.
+    @Pref("resizePercent", 75) static var resizePercent: Int
 }
 
 /// A UserDefaults value with its default.

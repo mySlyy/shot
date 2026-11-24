@@ -1,5 +1,13 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.4.0
+
+- Editor: Resize Image (⇧⌘R) shrinks or enlarges the shot by a percentage,
+  default 75%, then the last value used. Arrows, boxes, text, number badges,
+  pixelate/blur areas and the crop scale along; undo (⌘Z) restores the original
+  pixels. Save writes the resized PNG; Retina point/pixel ratio and color profile
+  are kept.
+
 ## 2.3.1
 
 - Opening an image with Slyy Shot from Finder (Open With, drop on the app icon)

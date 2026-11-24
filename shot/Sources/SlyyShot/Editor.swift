@@ -43,7 +43,34 @@ struct Mark {
 
     var kind: Kind
     var color: NSColor
+    /// Thin/Medium/Thick step (2/4/8); the popup shows it. Drawn sizes are width × scale.
     var width: CGFloat
+    /// Image resizes (⇧⌘R) shrink/grow marks with the shot; new marks start at 1.
+    var scale: CGFloat = 1
+
+    /// Stroke width as drawn.
+    var lineWidth: CGFloat { width * scale }
+    /// Text and number font size as drawn.
+    var fontSize: CGFloat { EditorCanvas.fontSize(width) * scale }
+
+    /// The mark after resizing the shot by `s`: geometry and drawn sizes multiplied.
+    func scaled(by s: CGFloat) -> Mark {
+        func p(_ q: CGPoint) -> CGPoint { CGPoint(x: q.x * s, y: q.y * s) }
+        func r(_ q: CGRect) -> CGRect { CGRect(x: q.minX * s, y: q.minY * s, width: q.width * s, height: q.height * s) }
+        var m = self
+        m.scale *= s
+        switch kind {
+        case .arrow(let a, let b): m.kind = .arrow(p(a), p(b))
+        case .rect(let q): m.kind = .rect(r(q))
+        case .ellipse(let q): m.kind = .ellipse(r(q))
+        case .highlight(let q): m.kind = .highlight(r(q))
+        case .text(let q, let t): m.kind = .text(p(q), t)
+        case .number(let q, let n): m.kind = .number(p(q), n)
+        case .pixelate(let q): m.kind = .pixelate(r(q))
+        case .blur(let q): m.kind = .blur(r(q))
+        }
+        return m
+    }
 
     func offsetBy(dx: CGFloat, dy: CGFloat) -> Mark {
         func o(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + dx, y: p.y + dy) }
@@ -63,7 +90,7 @@ struct Mark {
 
     /// Whether a click at `p` grabs this mark (generous tolerance).
     func contains(_ p: CGPoint) -> Bool {
-        let tol = max(6, width * 1.5)
+        let tol = max(6, lineWidth * 1.5)
         func nearSegment(_ a: CGPoint, _ b: CGPoint) -> Bool {
             let dx = b.x - a.x, dy = b.y - a.y
             let len2 = dx * dx + dy * dy
@@ -90,10 +117,10 @@ struct Mark {
         case .arrow(let a, let b): return CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
         case .rect(let r), .ellipse(let r), .highlight(let r), .pixelate(let r), .blur(let r): return r
         case .text(let at, let s):
-            let size = (s as NSString).size(withAttributes: [.font: NSFont.boldSystemFont(ofSize: EditorCanvas.fontSize(width))])
+            let size = (s as NSString).size(withAttributes: [.font: NSFont.boldSystemFont(ofSize: fontSize)])
             return CGRect(origin: at, size: size)
         case .number(let center, let n):
-            return EditorCanvas.badge(n, at: center, width: width).rect
+            return EditorCanvas.badge(n, at: center, size: fontSize).rect
         }
     }
 
@@ -109,14 +136,22 @@ struct Mark {
 
 @MainActor
 final class EditorCanvas: NSView, NSTextFieldDelegate {
-    let image: NSImage
-    private let pixelated: NSImage?
-    /// Blurred copy of the whole shot, made on first use of the Blur tool.
-    private lazy var blurred: NSImage? = Self.blur(image)
+    /// The shot; replaced by Resize Image (⇧⌘R).
+    private(set) var image: NSImage
+    private var pixelated: NSImage?
+    /// Blurred copy of the whole shot, made on first use of the Blur tool (outer nil = not made yet).
+    private var blurCache: NSImage??
+    private var blurred: NSImage? {
+        if let made = blurCache { return made }
+        let b = Self.blur(image)
+        blurCache = .some(b)
+        return b
+    }
     private(set) var marks: [Mark] = []
     private(set) var crop: CGRect? { didSet { onCropChange?() } }
     private(set) var changeCount = 0
-    private var undoStack: [([Mark], CGRect?)] = []
+    /// Undo states: marks, applied crop, and the shot (differs only across a resize).
+    private var undoStack: [([Mark], CGRect?, NSImage)] = []
     private var draft: Mark?
     private var draftCrop: CGRect?
     private var start = CGPoint.zero
@@ -144,6 +179,8 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     var onToolChange: ((Tool) -> Void)?
     /// Applied crop changed (set/undone): the stage moves its shadow.
     var onCropChange: (() -> Void)?
+    /// Shot resized (or resize undone): the stage follows the canvas size.
+    var onSizeChange: (() -> Void)?
 
     /// What is visible of the shot: the applied crop, else the whole image (view points).
     var visibleArea: CGRect { crop ?? bounds }
@@ -207,10 +244,10 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     nonisolated static func fontSize(_ width: CGFloat) -> CGFloat { 12 + width * 4 }
 
     /// Number badge geometry, shared by drawing and hit-testing: a circle for one digit, a pill for more.
-    /// Size follows the line width like text (Thin/Medium/Thick); digits are monospaced and bold.
-    nonisolated static func badge(_ n: Int, at center: CGPoint, width: CGFloat)
+    /// Size follows the text size (Mark.fontSize: Thin/Medium/Thick × scale); digits are monospaced and bold.
+    nonisolated static func badge(_ n: Int, at center: CGPoint, size: CGFloat)
         -> (rect: CGRect, text: String, font: NSFont, textWidth: CGFloat, baseline: CGFloat) {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize(width) * 0.72, weight: .bold)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: size * 0.72, weight: .bold)
         let text = String(n)
         let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
         let height = ceil(font.pointSize * 1.6)
@@ -232,10 +269,10 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
         switch m.kind {
         case .arrow(let a, let b):
             let angle = atan2(b.y - a.y, b.x - a.x)
-            let head = max(12, m.width * 4)
+            let head = max(12, m.width * 4) * m.scale
             let shaftEnd = CGPoint(x: b.x - cos(angle) * head * 0.8, y: b.y - sin(angle) * head * 0.8)
             let shaft = NSBezierPath()
-            shaft.lineWidth = m.width
+            shaft.lineWidth = m.lineWidth
             shaft.lineCapStyle = .round
             shaft.move(to: a)
             shaft.line(to: shaftEnd)
@@ -248,8 +285,9 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             tip.fill()
         case .rect(let r), .ellipse(let r):
             let p: NSBezierPath
-            if case .rect = m.kind { p = NSBezierPath(roundedRect: r, xRadius: 3, yRadius: 3) } else { p = NSBezierPath(ovalIn: r) }
-            p.lineWidth = m.width
+            let radius = 3 * m.scale
+            if case .rect = m.kind { p = NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius) } else { p = NSBezierPath(ovalIn: r) }
+            p.lineWidth = m.lineWidth
             p.stroke()
         case .highlight(let r):
             m.color.withAlphaComponent(0.35).setFill()
@@ -257,22 +295,22 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
         case .text(let at, let s):
             let shadow = NSShadow()
             shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
-            shadow.shadowBlurRadius = 3
-            shadow.shadowOffset = NSSize(width: 0, height: -1)
+            shadow.shadowBlurRadius = 3 * m.scale
+            shadow.shadowOffset = NSSize(width: 0, height: -m.scale)
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.boldSystemFont(ofSize: Self.fontSize(m.width)),
+                .font: NSFont.boldSystemFont(ofSize: m.fontSize),
                 .foregroundColor: m.color,
                 .shadow: shadow,
             ]
             (s as NSString).draw(at: at, withAttributes: attrs)
         case .number(let center, let n):
             // Rounded badge in the mark color; the digit black or white by WCAG contrast (Contrast.swift).
-            let b = Self.badge(n, at: center, width: m.width)
+            let b = Self.badge(n, at: center, size: m.fontSize)
             NSGraphicsContext.saveGraphicsState()
             let shadow = NSShadow() // lifts the badge off backgrounds of a similar color
             shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
-            shadow.shadowBlurRadius = 3
-            shadow.shadowOffset = NSSize(width: 0, height: -1)
+            shadow.shadowBlurRadius = 3 * m.scale
+            shadow.shadowOffset = NSSize(width: 0, height: -m.scale)
             shadow.set()
             NSBezierPath(roundedRect: b.rect, xRadius: b.rect.height / 2, yRadius: b.rect.height / 2).fill()
             NSGraphicsContext.restoreGraphicsState()
@@ -330,12 +368,12 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     // MARK: Editing
 
     private func commit(_ change: () -> Void) {
-        let before = (marks, crop)
+        let before = (marks, crop, image)
         change()
         recordChange(undoTo: before)
     }
 
-    private func recordChange(undoTo before: ([Mark], CGRect?)) {
+    private func recordChange(undoTo before: ([Mark], CGRect?, NSImage)) {
         undoStack.append(before)
         changeCount += 1
         needsDisplay = true
@@ -348,11 +386,63 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             return
         }
         selected = nil
+        if last.2 !== image { setImage(last.2) }
         marks = last.0
         crop = last.1
         changeCount += 1
         needsDisplay = true
         onChange?()
+    }
+
+    // MARK: Resize (⇧⌘R)
+
+    /// Pixel size of the shot (what Save writes before a crop).
+    var pixelSize: (width: Int, height: Int) {
+        let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        return (cg?.width ?? Int(image.size.width), cg?.height ?? Int(image.size.height))
+    }
+
+    /// Resize the shot to `factor` (0.75 = 75%), marks and crop with it, in one undo step.
+    /// Pixels are resampled (high quality); the Retina point/pixel ratio stays as it was.
+    func resize(by factor: CGFloat) {
+        guard factor > 0, factor != 1, let resized = Self.resized(image, by: factor) else { return }
+        // Actual factor after rounding to whole pixels, so marks land on the same content.
+        let s = resized.size.width / image.size.width
+        draft = nil
+        draftCrop = nil
+        selected = nil
+        commit {
+            marks = marks.map { $0.scaled(by: s) }
+            crop = crop.map { CGRect(x: $0.minX * s, y: $0.minY * s, width: $0.width * s, height: $0.height * s).integral }
+            setImage(resized)
+        }
+    }
+
+    /// Swap the shot: filtered copies follow, the view takes the new point size.
+    private func setImage(_ new: NSImage) {
+        image = new
+        pixelated = Self.pixelate(new)
+        blurCache = nil
+        setFrameSize(new.size)
+        onSizeChange?()
+    }
+
+    /// `image` resampled to `factor` of its pixel size, same color space (P3 stays P3), at least 1×1.
+    private static func resized(_ image: NSImage, by factor: CGFloat) -> NSImage? {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let w = max(1, Int((CGFloat(cg.width) * factor).rounded()))
+        let h = max(1, Int((CGFloat(cg.height) * factor).rounded()))
+        // RGB spaces only: CGBitmapContext rejects indexed (GIF) and gray+alpha.
+        let space = cg.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let out = ctx.makeImage() else { return nil }
+        // Keep points per pixel (Retina shots: 2 px per pt), so the resized shot is shown and saved alike.
+        let size = NSSize(width: CGFloat(w) * image.size.width / CGFloat(cg.width),
+                          height: CGFloat(h) * image.size.height / CGFloat(cg.height))
+        return NSImage(cgImage: out, size: size)
     }
 
     // MARK: Selection (click a mark: select, drag: move, click text: edit)
@@ -407,7 +497,10 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             commit { marks.append(mark) }
             return
         }
-        if tool == .text { openTextField(text: "", at: CGPoint(x: start.x - 3, y: start.y - Self.fieldHeight(lineWidth) / 2)) }
+        if tool == .text {
+            textScale = 1
+            openTextField(text: "", at: CGPoint(x: start.x - 3, y: start.y - Self.fieldHeight(textSize) / 2))
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -436,7 +529,7 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
             moving = nil
             NSCursor.openHand.set()
             if hypot(point(event).x - start.x, point(event).y - start.y) > 0.5 {
-                recordChange(undoTo: (m.original, crop))
+                recordChange(undoTo: (m.original, crop, image))
             } else {
                 marks = m.original
                 needsDisplay = true
@@ -476,13 +569,17 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     private var textField: NSTextField?
     private var textCancelled = false
     private var editingIndex: Int?
+    /// Scale of the text being typed: the edited mark's (after a resize), 1 for new text.
+    private var textScale: CGFloat = 1
+    /// Font size of the text being typed.
+    private var textSize: CGFloat { Self.fontSize(lineWidth) * textScale }
 
-    nonisolated static func fieldHeight(_ width: CGFloat) -> CGFloat { ceil(fontSize(width) * 1.4) }
-    nonisolated static func lineHeight(_ w: CGFloat) -> CGFloat { NSLayoutManager().defaultLineHeight(for: .boldSystemFont(ofSize: fontSize(w))) }
+    nonisolated static func fieldHeight(_ size: CGFloat) -> CGFloat { ceil(size * 1.4) }
+    nonisolated static func lineHeight(_ size: CGFloat) -> CGFloat { NSLayoutManager().defaultLineHeight(for: .boldSystemFont(ofSize: size)) }
 
     private func openTextField(text: String, at origin: CGPoint) {
-        let size = Self.fontSize(lineWidth)
-        let field = NSTextField(frame: NSRect(x: origin.x, y: origin.y, width: max(120, size * 6), height: Self.fieldHeight(lineWidth)))
+        let size = textSize
+        let field = NSTextField(frame: NSRect(x: origin.x, y: origin.y, width: max(120, size * 6), height: Self.fieldHeight(size)))
         field.stringValue = text
         field.font = NSFont.boldSystemFont(ofSize: size)
         field.textColor = color
@@ -506,9 +603,10 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
         selected = i
         color = marks[i].color
         lineWidth = marks[i].width
+        textScale = marks[i].scale
         editingIndex = i
         needsDisplay = true
-        let pad = (Self.fieldHeight(lineWidth) - Self.lineHeight(lineWidth)) / 2
+        let pad = (Self.fieldHeight(textSize) - Self.lineHeight(textSize)) / 2
         openTextField(text: s, at: CGPoint(x: at.x - 2, y: at.y - max(0, pad)))
     }
 
@@ -516,8 +614,8 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
     private func styleTextField() {
         guard let field = textField else { return }
         field.textColor = color
-        field.font = NSFont.boldSystemFont(ofSize: Self.fontSize(lineWidth))
-        field.frame.size.height = Self.fieldHeight(lineWidth)
+        field.font = NSFont.boldSystemFont(ofSize: textSize)
+        field.frame.size.height = Self.fieldHeight(textSize)
         fitTextField()
     }
 
@@ -558,8 +656,8 @@ final class EditorCanvas: NSView, NSTextFieldDelegate {
         needsDisplay = true
         if textCancelled { return }
         // Same spot as typed: text field inset 2 pt, line box vertically centered.
-        let at = CGPoint(x: frame.minX + 2, y: frame.minY + max(0, (frame.height - Self.lineHeight(lineWidth)) / 2))
-        let mark = Mark(kind: .text(at, text), color: color, width: lineWidth)
+        let at = CGPoint(x: frame.minX + 2, y: frame.minY + max(0, (frame.height - Self.lineHeight(textSize)) / 2))
+        let mark = Mark(kind: .text(at, text), color: color, width: lineWidth, scale: textScale)
         if let i = editing, marks.indices.contains(i) {
             selected = text.isEmpty ? nil : i
             commit { if text.isEmpty { marks.remove(at: i) } else { marks[i] = mark } }
@@ -819,6 +917,41 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         canvas.undo()
     }
 
+    /// ⇧⌘R: resize the shot by a percentage (default 75%, then the last one used); marks scale along.
+    /// Undoable like a mark. Save then writes the smaller (or larger) PNG.
+    @objc func resizeImage(_ sender: Any?) {
+        canvas.finishText()
+        guard window.attachedSheet == nil else { return }
+        let px = canvas.pixelSize
+        let field = NSTextField(string: String(Settings.resizePercent))
+        field.frame = NSRect(x: 0, y: 0, width: 64, height: 22)
+        field.alignment = .right
+        let unit = NSTextField(labelWithString: "%")
+        unit.frame = NSRect(x: 70, y: 2, width: 20, height: 18)
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 90, height: 22))
+        accessory.addSubview(field)
+        accessory.addSubview(unit)
+
+        let alert = NSAlert()
+        alert.messageText = "Resize Image"
+        alert.informativeText = "Now \(px.width) × \(px.height) px. Arrows, boxes, text and numbers scale along (1–400%)."
+        alert.accessoryView = accessory
+        alert.addButton(withTitle: "Resize")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            let text = field.stringValue.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces)
+            guard let percent = Int(text), (1...400).contains(percent) else {
+                NSSound.beep()
+                return
+            }
+            Settings.resizePercent = percent
+            self.canvas.resize(by: CGFloat(percent) / 100)
+            self.window.makeFirstResponder(self.canvas)
+        }
+    }
+
     @objc func copy(_ sender: Any?) {
         canvas.finishText()
         guard let png = canvas.renderedPNG(cropTo: canvas.copyArea) else { return }
@@ -1042,6 +1175,14 @@ final class FloatingStage: NSView {
         canvas.setFrameOrigin(NSPoint(x: m, y: m))
         addSubview(canvas)
         canvas.onCropChange = { [weak self] in self?.needsDisplay = true }
+        canvas.onSizeChange = { [weak self] in self?.fitCanvas() }
+    }
+
+    /// Canvas resized (Resize Image or its undo): margin stays, shadow redrawn.
+    private func fitCanvas() {
+        let m = Self.margin
+        setFrameSize(NSSize(width: canvas.frame.width + 2 * m, height: canvas.frame.height + 2 * m))
+        needsDisplay = true
     }
 
     required init?(coder: NSCoder) {
