@@ -103,7 +103,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         editMenu.addItem(item("Copy", #selector(NSText.copy(_:)), "c"))
         editMenu.addItem(item("Paste", #selector(NSText.paste(_:)), "v"))
         editMenu.addItem(item("Select All", #selector(NSText.selectAll(_:)), "a"))
-        for sub in [appMenu, fileMenu, editMenu] {
+        let imageMenu = NSMenu(title: "Image")
+        imageMenu.addItem(item("Resize Image…", #selector(Editor.resizeImage(_:)), "r", [.command, .shift]))
+        for sub in [appMenu, fileMenu, editMenu, imageMenu] {
             let holder = NSMenuItem(title: sub.title, action: nil, keyEquivalent: "")
             holder.submenu = sub
             main.addItem(holder)
