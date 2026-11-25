@@ -11,7 +11,7 @@ Keyboard Shortcuts…). Saves PNGs to
 
 Download
 https://github.com/mySlyy/shot/releases/download/slyy-shot-latest/SlyyShot.dmg
-(always the newest), open it, drag Slyy Shot to Applications (first launch: Privacy & Security > "Open Anyway").
+(always the newest), open it, drag Slyy Shot to Applications (signed with Developer ID and notarized).
 Or from Terminal (no Gatekeeper prompt):
 
     curl -fsSL https://raw.githubusercontent.com/mySlyy/shot/main/shot-install.sh | sh
@@ -28,9 +28,9 @@ signature verified). Updates and the installer accept only builds by the pinned 
 `shot/Resources/update_signer.req` (copy in `shot-install.sh` SIGNER_REQ; the release
 workflow checks both match and refuses ad-hoc releases).
 
-Pinned signers: the self-signed "Slyy Snap Code Signing" root (current) or Developer ID
-Application team W5FXZ96W6V. Switch: release 2.4.1 with the old certificate (ships this
-pin), then swap the signing/notary secrets; later drop the old root from the pin.
+Pinned signers: Developer ID Application team W5FXZ96W6V (releases from 2.4.2, notarized)
+or the old self-signed "Slyy Snap Code Signing" root (up to 2.4.1). Drop the old root from
+the pin once installs have updated past 2.4.1.
 
 ## Releases
 

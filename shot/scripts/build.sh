@@ -64,7 +64,7 @@ if [ "$ts" = --timestamp ] && [ -n "${NOTARY_KEY:-}" ] && [ -n "${NOTARY_KEY_ID:
 fi
 submit() {
 	xcrun notarytool submit "$1" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" \
-		--wait --timeout 30m --output-format json >dist/notary.json || true
+		--wait --timeout 60m --output-format json >dist/notary.json || true
 	cat dist/notary.json
 	id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id",""))' dist/notary.json 2>/dev/null || true)
 	status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status",""))' dist/notary.json 2>/dev/null || true)
