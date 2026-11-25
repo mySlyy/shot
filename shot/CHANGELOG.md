@@ -1,5 +1,10 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.4.2
+
+- Signed with the Slyy Developer ID (Apple, team W5FXZ96W6V) and notarized by
+  Apple: downloads open without "Open Anyway" in Privacy & Security.
+
 ## 2.4.1
 
 - Updates: also accept builds signed with the Slyy Developer ID (Apple, team
