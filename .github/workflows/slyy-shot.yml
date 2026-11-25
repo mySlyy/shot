@@ -11,7 +11,9 @@ name: Slyy Shot release
 #   NOTARY_KEY_P8 / NOTARY_KEY_ID / NOTARY_ISSUER_ID  App Store Connect API key (.p8 plain or base64)
 # Switching certificates: add the new signer to shot/Resources/update_signer.req (and SIGNER_REQ in
 # shot-install.sh) as an "or" alternative, release that with the old certificate first, or installed
-# copies refuse the update.
+# copies refuse the update. To build with the old certificate while the repo secrets already hold the
+# new one: put the old SHOT_SIGN_* into a GitHub environment and set repo variable SHOT_SIGN_ENV to its
+# name (environment secrets override repo secrets); delete the variable afterwards.
 
 on:
   push:
@@ -39,6 +41,7 @@ concurrency: slyy-shot-release
 jobs:
   release:
     runs-on: macos-15-intel # arm64 runners often lack capacity; builds are universal either way
+    environment: ${{ vars.SHOT_SIGN_ENV || '' }} # empty = repo secrets only (see header)
     env:
       INPUT_VERSION: ${{ inputs.version }}
       SHOT_SIGN_P12: ${{ secrets.SHOT_SIGN_P12 }}
@@ -144,7 +147,9 @@ jobs:
           {
             echo
             echo "Install (macOS 13+): download **SlyyShot-$VERSION.dmg**, open it, drag Slyy Shot to Applications."
-            [ -n "$NOTARY_KEY_P8" ] || echo 'First launch: System Settings > Privacy & Security > "Open Anyway" (not notarized).'
+            # build.sh notarizes only Developer ID builds with a notary key
+            case "${SIGN_NAME:-}" in "Developer ID"*) [ -n "$NOTARY_KEY_P8" ] ;; *) false ;; esac ||
+              echo 'First launch: System Settings > Privacy & Security > "Open Anyway" (not notarized).'
             echo
             echo 'Or from Terminal (no Gatekeeper prompt):'
             echo

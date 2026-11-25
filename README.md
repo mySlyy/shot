@@ -28,6 +28,10 @@ signature verified). Updates and the installer accept only builds by the pinned 
 `shot/Resources/update_signer.req` (copy in `shot-install.sh` SIGNER_REQ; the release
 workflow checks both match and refuses ad-hoc releases).
 
+Pinned signers: the self-signed "Slyy Snap Code Signing" root (current) or Developer ID
+Application team W5FXZ96W6V. Switch: release 2.4.1 with the old certificate (ships this
+pin), then swap the signing/notary secrets; later drop the old root from the pin.
+
 ## Releases
 
 Releases are the `slyy-shot-v*` tags (never "Latest"; the rolling `slyy-shot-latest`

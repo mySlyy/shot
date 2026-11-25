@@ -24,7 +24,7 @@ BUNDLE_ID="ai.slyy.shot"
 PROC="SlyyShot"
 # Pinned signer: must equal shot/Resources/update_signer.req (checked by the release workflow).
 # SHA256SUMS comes from the same release, so only this proves who built the app.
-SIGNER_REQ='identifier "ai.slyy.shot" and certificate root = H"e794d64fa8c843fbd7c75c2fca5a23afda3ba74c"'
+SIGNER_REQ='identifier "ai.slyy.shot" and (certificate root = H"e794d64fa8c843fbd7c75c2fca5a23afda3ba74c" or (anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "W5FXZ96W6V"))'
 
 say() { printf 'shot-install: %s\n' "$*"; }
 die() { printf 'shot-install: error: %s\n' "$*" >&2; exit 1; }

@@ -1,5 +1,11 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.4.1
+
+- Updates: also accept builds signed with the Slyy Developer ID (Apple, team
+  W5FXZ96W6V), besides the current certificate. Prepares notarized releases
+  (no more "Open Anyway" on first launch). Same pin in shot-install.sh.
+
 ## 2.4.0
 
 - Editor: Resize Image (⇧⌘R) shrinks or enlarges the shot by a percentage,
