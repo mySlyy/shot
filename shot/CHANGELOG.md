@@ -1,5 +1,11 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.3.1
+
+- Opening an image with Slyy Shot from Finder (Open With, drop on the app icon)
+  failed with "Slyy Shot cannot open files in the PNG image format". Now opens it
+  in the editor (PNG, JPEG, TIFF, HEIC, GIF, BMP). Preview stays the default viewer.
+
 ## 2.3.0
 
 - Editor: Number tool (N, "#"): each click places the next number (1, 2, 3 …) on a
