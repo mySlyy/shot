@@ -730,9 +730,60 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         editor.show()
     }
 
+    static var hasOpenEditors: Bool { !editors.isEmpty }
+
+    /// ⌘⇧F: all open shots in front of other apps (minimized ones restored); the newest is key.
+    static func bringAllToFront() {
+        guard !editors.isEmpty else { return NSSound.beep() }
+        NSApp.activate(ignoringOtherApps: true)
+        for e in editors {
+            if e.window.isMiniaturized { e.window.deminiaturize(nil) }
+            e.window.orderFront(nil)
+        }
+        editors.last?.window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Image types the editor opens (Open panel, Open All; Info.plist CFBundleDocumentTypes alike).
+    static let imageTypes: [UTType] = [.png, .jpeg, .tiff, .heic, .gif, .bmp]
+    /// Above this many shots, Open All asks first (each shot is a window).
+    static let openAllLimit = 20
+
+    /// ⌘⌥⇧O: every image in the shots folder, each in its own editor, oldest first (newest ends on top).
+    /// More than `openAllLimit`: asks, offering the newest ones only.
+    static func openAllInFolder() {
+        let folder = Settings.folder
+        let keys: [URLResourceKey] = [.contentTypeKey, .contentModificationDateKey, .isRegularFileKey]
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys,
+                                                                   options: [.skipsHiddenFiles])) ?? []
+        func date(_ u: URL) -> Date { (try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast }
+        let shots = files.filter { u in
+            guard let v = try? u.resourceValues(forKeys: Set(keys)), v.isRegularFile == true, let t = v.contentType else { return false }
+            return imageTypes.contains { t.conforms(to: $0) }
+        }.sorted { date($0) < date($1) }
+        NSApp.activate(ignoringOtherApps: true)
+        guard !shots.isEmpty else {
+            return Alerts.info("No shots to open", "\(folder.path) has no images.")
+        }
+        var open = shots
+        if shots.count > openAllLimit {
+            let alert = NSAlert()
+            alert.messageText = "Open all \(shots.count) shots?"
+            alert.informativeText = "Each shot opens in its own editor window."
+            alert.addButton(withTitle: "Open Newest \(openAllLimit)")
+            alert.addButton(withTitle: "Open All \(shots.count)")
+            alert.addButton(withTitle: "Cancel")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: open = Array(shots.suffix(openAllLimit))
+            case .alertSecondButtonReturn: break
+            default: return
+            }
+        }
+        for url in open { Editor.open(url) }
+    }
+
     static func chooseAndOpen() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.png, .jpeg, .tiff, .heic, .gif, .bmp]
+        panel.allowedContentTypes = imageTypes
         panel.directoryURL = Settings.folder
         NSApp.activate(ignoringOtherApps: true)
         if panel.runModal() == .OK, let url = panel.url { open(url) }
@@ -883,7 +934,14 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         let fit = min(1, (visible.width * 0.85) / max(img.width, 1), (visible.height * 0.85 - barHeight) / max(img.height, 1))
         let size = NSSize(width: max(640, img.width * fit + 2), height: max(360, img.height * fit + barHeight + 2))
         window.setContentSize(size)
-        window.center()
+        // Cascade from the newest other editor (Open All: a staircase, not one stack); else centered.
+        if let previous = Editor.editors.last(where: { $0 !== self && $0.window.isVisible }) {
+            let f = previous.window.frame
+            window.setFrameTopLeftPoint(NSPoint(x: f.minX + 24, y: f.maxY - 24))
+            window.setFrame(window.constrainFrameRect(window.frame, to: previous.window.screen), display: false)
+        } else {
+            window.center()
+        }
         scroll.magnification = fit
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
@@ -959,8 +1017,9 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         NSSound(named: "Tink")?.play()
     }
 
-    /// Moves the file to the Trash (recoverable there) and closes without the save prompt.
-    /// No shortcut: ⌘⌫ would also fire while typing a text mark.
+    /// ⌘D (File > Move to Trash) or the Delete button: moves the file to the Trash (recoverable there)
+    /// and closes without the save prompt; the next open shot becomes key. Not ⌘⌫: that would also
+    /// fire while typing a text mark.
     @objc func deleteShot(_ sender: Any?) {
         canvas.finishText()
         let old = url
@@ -972,7 +1031,14 @@ final class Editor: NSObject, NSWindowDelegate, NSPopoverDelegate {
         }
         NSSound(named: "Funk")?.play()
         Editor.onDelete?(old)
+        // Next shot: the one opened after this (wrapping to the first), so ⌘D walks through them.
+        let others = Editor.editors
+        let next = others.firstIndex { $0 === self }.flatMap { i -> Editor? in
+            let rest = Array(others[(i + 1)...]) + Array(others[..<i])
+            return rest.first { $0.window.isVisible }
+        }
         window.close() // close() skips windowShouldClose, so no "Save changes?" for a trashed file
+        next?.window.makeKeyAndOrderFront(nil)
     }
 
     private var canSaveInPlace: Bool { url.pathExtension.lowercased() == "png" }

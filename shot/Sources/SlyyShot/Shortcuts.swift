@@ -1,7 +1,8 @@
 import AppKit
 import Carbon.HIToolbox
 
-// User-mappable global shortcuts for Capture Area / Window / Screen (Options > Keyboard Shortcuts…).
+// User-mappable global shortcuts (Options > Keyboard Shortcuts…): Capture Area / Window / Screen,
+// Bring Shots to Front, Open All Shots in Editor.
 // Stored per action in UserDefaults; no value = the default, an empty value = no shortcut.
 
 /// A key combination: Carbon key code + Carbon modifiers (what RegisterEventHotKey takes), plus the
@@ -56,30 +57,39 @@ struct Shortcut: Codable, Equatable {
 }
 
 enum ShortcutAction: UInt32, CaseIterable {
-    case area = 1, window = 2, screen = 3 // also the HotKeys ids
+    case area = 1, window = 2, screen = 3 // also the HotKeys ids (4 = Edit Last Shot, fixed)
+    case bringToFront = 5, openAll = 6
 
     var title: String {
         switch self {
         case .area: return "Capture Area"
         case .window: return "Capture Window"
         case .screen: return "Capture Screen"
+        case .bringToFront: return "Bring Shots to Front"
+        case .openAll: return "Open All Shots in Editor"
         }
     }
 
-    var mode: CaptureMode {
+    /// Capture actions only (nil for the editor-window actions).
+    var mode: CaptureMode? {
         switch self {
         case .area: return .area
         case .window: return .window
         case .screen: return .screen
+        case .bringToFront, .openAll: return nil
         }
     }
 
-    /// ⌘⇧5 area, ⌘⇧4 window, ⌘⇧3 screen (macOS' own screenshot shortcuts must be off for these).
+    /// ⌘⇧5 area, ⌘⇧4 window, ⌘⇧3 screen (macOS' own screenshot shortcuts must be off for these),
+    /// ⌘⇧F bring open shots to front, ⌘⌥⇧O open all shots of the folder. Global: they win over the
+    /// same keys in other apps (e.g. ⌘⇧F Find in Files), hence mappable/removable.
     var defaultShortcut: Shortcut {
         switch self {
         case .area: return Shortcut(keyCode: kVK_ANSI_5, modifiers: cmdKey | shiftKey, key: "5")
         case .window: return Shortcut(keyCode: kVK_ANSI_4, modifiers: cmdKey | shiftKey, key: "4")
         case .screen: return Shortcut(keyCode: kVK_ANSI_3, modifiers: cmdKey | shiftKey, key: "3")
+        case .bringToFront: return Shortcut(keyCode: kVK_ANSI_F, modifiers: cmdKey | shiftKey, key: "f")
+        case .openAll: return Shortcut(keyCode: kVK_ANSI_O, modifiers: cmdKey | shiftKey | optionKey, key: "o")
         }
     }
 
@@ -108,10 +118,10 @@ extension Settings {
     }
 }
 
-/// Registers the capture shortcuts with HotKeys; `capture` is set once by the AppDelegate.
+/// Registers the mappable shortcuts with HotKeys; `perform` is set once by the AppDelegate.
 @MainActor
 enum ShortcutRegistry {
-    static var capture: ((CaptureMode) -> Void)?
+    static var perform: ((ShortcutAction) -> Void)?
 
     static func applyAll() {
         for action in ShortcutAction.allCases { apply(action) }
@@ -125,7 +135,7 @@ enum ShortcutRegistry {
             return true
         }
         return HotKeys.shared.register(id: action.rawValue, keyCode: s.keyCode, modifiers: s.modifiers) {
-            capture?(action.mode)
+            perform?(action)
         }
     }
 
@@ -150,7 +160,7 @@ enum ShortcutRegistry {
         return .saved
     }
 
-    /// Back to the default (⌘⇧5/4/3), unless another action took those keys meanwhile.
+    /// Back to the default, unless another action took those keys meanwhile.
     static func reset(_ action: ShortcutAction) -> Change {
         if let other = conflict(action.defaultShortcut, excluding: action) { return .conflict(other) }
         let before = UserDefaults.standard.object(forKey: action.prefKey)
@@ -248,7 +258,7 @@ final class ShortcutRecorder: NSButton {
     }
 }
 
-/// Options > Keyboard Shortcuts…: one recorder + "Default" button per capture action.
+/// Options > Keyboard Shortcuts…: one recorder + "Default" button per action.
 @MainActor
 final class ShortcutsWindow: NSObject, NSWindowDelegate {
     private static var current: ShortcutsWindow?
@@ -267,7 +277,7 @@ final class ShortcutsWindow: NSObject, NSWindowDelegate {
     let message = NSTextField(wrappingLabelWithString: ShortcutsWindow.hint)
 
     override init() {
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 200), styleMask: [.titled, .closable],
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 280), styleMask: [.titled, .closable],
                           backing: .buffered, defer: false)
         window.title = "Keyboard Shortcuts"
         window.isReleasedWhenClosed = false

@@ -1,5 +1,17 @@
 # Slyy Shot changelog (formerly Slyy Snap)
 
+## 2.5.0
+
+- ⌘⇧F: Bring Shots to Front: all open editor windows in front of other apps
+  (minimized ones restored).
+- ⌘⌥⇧O: Open All Shots in Editor: every image in the shots folder, each in its own
+  window, cascaded, newest on top. More than 20: asks (newest 20 or all).
+- Both are global and mappable/removable under Options > Keyboard Shortcuts (⌘⇧F
+  overrides Find in Files etc. in other apps while Slyy Shot runs). Also in the menu.
+- Editor: ⌘D moves the shot to the Trash (like the Delete button) and the next
+  open shot comes to the front.
+- build.sh: ARCH=host builds for this Mac only (local test builds without Xcode).
+
 ## 2.4.2
 
 - Signed with the Slyy Developer ID (Apple, team W5FXZ96W6V) and notarized by
