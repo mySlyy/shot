@@ -29,10 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
-        // Capture shortcuts: user-mappable (Options > Keyboard Shortcuts…), default ⌘⇧5 area, ⌘⇧4 window,
-        // ⌘⇧3 screen (macOS' own screenshot shortcuts must be off for those). ⌃⇧E edit last: fixed.
+        // Global shortcuts: user-mappable (Options > Keyboard Shortcuts…), default ⌘⇧5 area, ⌘⇧4 window,
+        // ⌘⇧3 screen (macOS' own screenshot shortcuts must be off for those), ⌘⇧F bring shots to front,
+        // ⌘⌥⇧O open all shots. ⌃⇧E edit last: fixed.
         let shooter = self.shooter
-        ShortcutRegistry.capture = { mode in shooter.capture(mode) }
+        ShortcutRegistry.perform = { action in Self.perform(action, shooter) }
         ShortcutRegistry.applyAll()
         let edit = ShortcutAction.editLast
         HotKeys.shared.register(id: ShortcutAction.editLastID, keyCode: edit.keyCode, modifiers: edit.modifiers) { shooter.editLast() }
@@ -46,6 +47,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 if Settings.autoUpdate { self?.updater.check(userInitiated: false) }
             }
+        }
+    }
+
+    /// A mappable shortcut or its menu item.
+    private static func perform(_ action: ShortcutAction, _ shooter: Shooter) {
+        if let mode = action.mode { return shooter.capture(mode) }
+        switch action {
+        case .bringToFront: Editor.bringAllToFront()
+        case .openAll: Editor.openAllInFolder()
+        case .area, .window, .screen: break // captures, above
         }
     }
 
@@ -95,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let fileMenu = NSMenu(title: "File")
         fileMenu.addItem(item("Save", #selector(Editor.saveDocument(_:)), "s"))
         fileMenu.addItem(item("Save As…", #selector(Editor.saveDocumentAs(_:)), "s", [.command, .shift]))
+        fileMenu.addItem(item("Move to Trash", #selector(Editor.deleteShot(_:)), "d"))
         fileMenu.addItem(item("Close", #selector(NSWindow.performClose(_:)), "w"))
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(item("Undo", #selector(Editor.undoMark(_:)), "z"))
@@ -119,14 +131,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let shooter = self.shooter
         let updater = self.updater
 
-        for action in ShortcutAction.allCases { // shows the current (mapped) keys
+        func shortcutItem(_ action: ShortcutAction, enabled: Bool = true) -> ActionItem { // shows the current (mapped) keys
             let s = Settings.shortcut(for: action)
-            menu.addItem(ActionItem(action.title, key: s?.key ?? "", mods: s?.menuModifiers ?? []) { shooter.capture(action.mode) })
+            return ActionItem(action.title, key: s?.key ?? "", mods: s?.menuModifiers ?? [], enabled: enabled) {
+                Self.perform(action, shooter)
+            }
         }
+        for action in ShortcutAction.allCases where action.mode != nil { menu.addItem(shortcutItem(action)) }
         menu.addItem(.separator())
 
         let hasLast = shooter.lastShot != nil
         menu.addItem(ActionItem("Edit Last Shot", key: "e", mods: cs, enabled: hasLast) { shooter.editLast() })
+        menu.addItem(shortcutItem(.bringToFront, enabled: Editor.hasOpenEditors))
+        menu.addItem(shortcutItem(.openAll))
         menu.addItem(ActionItem("Open Image in Editor…") { Editor.chooseAndOpen() })
         menu.addItem(ActionItem("Copy Last Shot", enabled: hasLast) { shooter.copyLast() })
         menu.addItem(ActionItem("Show Last Shot in Finder", enabled: hasLast) { shooter.revealLast() })

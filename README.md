@@ -5,7 +5,11 @@ Personal screenshot tool, macOS 13+ (Apple Silicon + Intel). https://slyy.ai
 Menu bar app: ⌘⇧5 area, ⌘⇧4 window, ⌘⇧3 screen (switch off the
 macOS "Screenshots" keyboard shortcuts, or map other keys under Options >
 Keyboard Shortcuts…). Saves PNGs to
-~/Pictures/Slyy Shot and copies them to the clipboard.
+~/Pictures/Slyy Shot and copies them to the clipboard. ⌘⇧F brings open shots to the
+front, ⌘⌥⇧O opens all shots of the folder; in the editor ⌘D trashes the shot.
+
+Local test build (Command Line Tools only): `ARCH=host shot/scripts/build.sh <version>`,
+optionally with `SIGN_IDENTITY` (keychain identity; else ad-hoc). Releases: CI only.
 
 ## Installation
 

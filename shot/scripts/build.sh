@@ -3,7 +3,7 @@
 #   shot/dist/SlyyShot-<version>.dmg  (double-click install: drag to Applications)
 #   shot/dist/SlyyShot-<version>.zip  (used by the self-updater and shot-install.sh)
 #   shot/dist/SHA256SUMS
-# Usage: shot/scripts/build.sh 1.0.0      (macOS + Xcode command line tools)
+# Usage: shot/scripts/build.sh 1.0.0      (macOS + Xcode; ARCH=host with Command Line Tools only)
 # Signing: $SIGN_IDENTITY (a codesigning identity in the keychain) or ad-hoc ("-").
 # RELEASE=1 (CI publish): refuse ad-hoc, and the app must satisfy the pinned signer
 # Resources/update_signer.req (the same pin the self-updater and shot-install.sh enforce).
@@ -21,8 +21,18 @@ if [ "${RELEASE:-}" = 1 ] && [ "$identity" = - ]; then
 	exit 1
 fi
 
-swift build -c release --arch arm64 --arch x86_64
-bin="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/SlyyShot"
+# ARCH=host: this Mac's architecture only, for local test builds (a universal build needs full Xcode;
+# Command Line Tools alone lack xcbuild). Releases are always universal.
+if [ "${ARCH:-}" = host ]; then
+	[ "${RELEASE:-}" != 1 ] || { echo "RELEASE=1 needs a universal build; unset ARCH" >&2; exit 1; }
+	archs=""
+else
+	archs="--arch arm64 --arch x86_64"
+fi
+# shellcheck disable=SC2086 # $archs: word splitting intended
+swift build -c release $archs
+# shellcheck disable=SC2086
+bin="$(swift build -c release $archs --show-bin-path)/SlyyShot"
 
 rm -rf dist
 app="dist/Slyy Shot.app"
